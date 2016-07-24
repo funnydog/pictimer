@@ -1,0 +1,10 @@
+processor p18f4620
+load timer.cod
+frequency 16000000
+module library libgpsim_modules
+module load usart U1
+node TX
+node RX
+attach RX portc7 U1.TXPIN
+attach TX portc6 U1.RXPIN
+

@@ -3,7 +3,7 @@
         global  i2c_init, i2c_start, i2c_restart, i2c_stop, i2c_write
         global  i2c_read_ack, i2c_read_nack, i2c_send_tbl
 
-#define SPEED(x) (16000/x)/4-1
+#define SPEED(x) (FOSC/1000/x)/4-1
 
 .i2c    code
 

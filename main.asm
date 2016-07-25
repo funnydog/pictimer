@@ -249,7 +249,7 @@ main_l3:
         movlw   1
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH
-        iorwf   flags, B
+        iorwf   flags, F, B
 
 main_l4:
         ;; check the button PLUS
@@ -468,7 +468,7 @@ b16_d5
         addlw   -0x06           ; wmax=5:0
 
         addlw   0x06            ; include previous sum
-        addwf   dbuf+8,w
+        addwf   dbuf+8, W, B
         skpdc
         addlw   -0x06           ; wmax=9:5, ones sum ended
 
@@ -534,7 +534,7 @@ b16_d5
         skpdc
         addlw   -0x06           ; wmax=9:3, tens sum ended
 
-        movwf   dbuf+6          ; save total tens sum in dbuf+6
+        movwf   dbuf+6, B       ; save total tens sum in dbuf+6
         swapf   dbuf+6, W, B
         andlw   0x0f            ; load partial hundreds sum in w
 ;

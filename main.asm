@@ -15,6 +15,7 @@
 
         ;; constants
 B       equ     BANKED
+TIMEOUT equ     265
 
         ;; flags
 LIGHTON equ     0               ; light on
@@ -40,7 +41,7 @@ tsec    res     1               ; counter of tick seconds
 
 .edata  code    0xF00000
 
-saved   de      LOW(65), HIGH(65) ; saved timeout data
+saved   de      LOW(TIMEOUT), HIGH(TIMEOUT) ; saved timeout data
 
         ;; entry code section
 .reset  code    0x0000

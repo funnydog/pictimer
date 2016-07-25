@@ -1,4 +1,3 @@
-
         include "config.inc"
         include "delay.inc"
 	include "i2c.inc"
@@ -9,7 +8,7 @@
 	config	PWRTEN = ON, BOREN = NOSLP, BORV = 285, LPBOR = OFF
 	config  WDTEN = OFF
 	config	MCLRE = ON, PBADEN = OFF
-	config	DEBUG = OFF, XINST = ON, LVP = OFF, STVREN = OFF
+	config	DEBUG = OFF, XINST = OFF, LVP = OFF, STVREN = OFF
 	config	CP0 = OFF, CP1 = OFF, CP2 = OFF, CP3 = OFF, CPB = OFF, CPD = OFF
 	config  WRT0 = OFF, WRT1 = OFF, WRT2 = OFF, WRT3 = OFF, WRTB = OFF, WRTD = OFF
         config	EBTR0 = OFF, EBTR1 = OFF, EBTR2 = OFF, EBTR3 = OFF, EBTRB = OFF

@@ -21,7 +21,6 @@
 
 .data   udata
 
-setout  res     2               ; preset timeout
 timeout res     2               ; timeout in seconds
 bstate  res     10              ; 10 debounces
 button  res     2               ; button status
@@ -31,12 +30,17 @@ flags   res     1               ; signaling flags
 bindex  res     1               ; current index
 tsec    res     1               ; counter of tick seconds
 
+.edata  code    0xF00000
+
+saved   de      LOW(65), HIGH(65) ; saved timeout data
+
 B       equ     BANKED
 
         ;; flags
-LIGHT   equ     0               ; light on flag
-REFRESH equ     1               ; the display needs refresh
-LEADING equ     2               ; don't print the leading zero
+LIGHTON equ     0               ; light on
+LGHTOFF equ     1               ; light off
+REFRESH equ     2               ; the display needs refresh
+LEADING equ     3               ; don't print the leading zero
 
         ;; buttons
 BSTART  equ     0               ; start
@@ -73,7 +77,7 @@ isr:
         clrf    bindex, B
 
         ;; do not count seconds if not needed
-        btfss   flags, LIGHT, B
+        btfss   flags, LIGHTON, B
         bra     isr0_end
 
         ;; check if timeout is zero
@@ -83,11 +87,8 @@ isr:
 
         ;; timeout is zero
         bcf     LATB, 2, A
-        bcf     flags, 0, B
-        movf    setout+0, W, B
-        movwf   timeout+0, B
-        movf    setout+1, W, B
-        movwf   timeout+1, B
+        bcf     flags, LIGHTON, B
+        bsf     flags, LGHTOFF, B
         bra     isr0_end
 
         ;; timeout is not zero
@@ -129,12 +130,7 @@ start:
         movlb   0x0              ; select the bank 0
 
         ;; initialize timeout
-        movlw   LOW(65)
-        movwf   setout+0, B
-        movwf   timeout+0, B
-        movlw   HIGH(65)
-        movwf   setout+1, B
-        movwf   timeout+1, B
+        call    read_timeout
 
         ;; initialize bstate
         lfsr    FSR0, bstate
@@ -180,13 +176,25 @@ main_l0:
         call    seg_init
 
         ;; write some numbers
-        bcf     flags, 0, B
-        bsf     flags, 1, B
+        bcf     flags, LIGHTON, B
+        bsf     flags, REFRESH, B
 
 main_l1:
-        btfss   flags, 1, B
+        ;; check if the light has been turned off
+        ;; and reset the timeout value
+        btfss   flags, LGHTOFF, B
         bra     main_l2
+        bcf     flags, LGHTOFF, B
+        call    read_timeout
+        bsf     flags, REFRESH, B
 
+main_l2:
+        ;; check if we need to refresh the display
+        ;; with the new values
+        btfss   flags, REFRESH, B
+        bra     main_l3
+
+        ;; 16bit to BCD conversion
         call    b16_d5
 
         ;; convert the buffer to a proper
@@ -211,42 +219,42 @@ main_l1:
         movwf   dbuf+8, B
 
         call    seg_send_buf
-        bcf     flags, 1, B
+        bcf     flags, REFRESH, B
 
         ;; switches
-main_l2:
-        ;; if LIGHT do not read the user input
-        btfsc   flags, LIGHT, B
+main_l3:
+        ;; if LIGHTON do not read the user input
+        btfsc   flags, LIGHTON, B
         bra     main_l1
 
         ;; read the buttons, save the old read
-        movff   button+0, button+1
+        movf    button+0, W, B
+        movwf   button+1, B
         call    get_switches
 
         ;; check the button START
         btfss   button+0, BSTART, B
-        bra     main_l3
+        bra     main_l4
 
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
-        bz      main_l3
+        bz      main_l4
 
         ;; set the start flags
-        movff   timeout+0, setout+0
-        movff   timeout+1, setout+1
+        call    update_timeout
         bsf     LATB, 2, A
         movlw   1
         movwf   tsec, B
-        movlw   1<<LIGHT | 1<<REFRESH
+        movlw   1<<LIGHTON | 1<<REFRESH
         movwf   flags, B
 
-main_l3:
+main_l4:
         ;; check the button PLUS
         btfss   button+0, BPLUS, B
-        bra     main_l4
+        bra     main_l5
         btfsc   button+1, BPLUS, B
-        bra     main_l4
+        bra     main_l5
 
         ;; increase the seconds
         incf    timeout+0, F, B
@@ -254,7 +262,7 @@ main_l3:
         incf    timeout+1, F, B
         bsf     flags, REFRESH, B
 
-main_l4:
+main_l5:
         ;; check the button MINUS
         btfss   button+0, BMINUS, B
         bra     main_l1
@@ -266,12 +274,12 @@ main_l4:
         decf    timeout+0, F, B
         btfss   STATUS, C, A
         decf    timeout+1, F, B
-        bc      main_l5
+        bc      main_l6
 
         ;; but not below 0
         clrf    timeout+0, B
         clrf    timeout+1, B
-main_l5:
+main_l6:
         bsf     flags, REFRESH, B
         bra     main_l1
 
@@ -369,6 +377,60 @@ get_switches_l0:
         decfsz  tmp, F, B
         bra     get_switches_l0
         movwf   button, B
+        return
+
+        ;; read the timeout in EEPROM
+read_timeout:
+        lfsr    FSR0, timeout
+        movlw   saved+0
+        movwf   EEADR, A
+        bcf     EECON1, EEPGD, A
+        bcf     EECON1, CFGS, A
+        movlw   2
+        movwf   tmp, B
+read_timeout_l0:
+        bsf     EECON1, RD, A
+        movf    EEDATA, W, A
+        movwf   POSTINC0, A
+        incf    EEADR, F, A
+        decfsz  tmp, F, B
+        bra     read_timeout_l0
+        return
+
+        ;; update the timeout in EEPROM
+        ;; when different from timeout in memory
+update_timeout:
+        movlw   2
+        movwf   tmp, B
+        lfsr    FSR0, timeout
+        movlw   saved+0
+        movwf   EEADR, A
+        bcf     EECON1, CFGS, A
+        bcf     EECON1, EEPGD, A
+        bsf     EECON1, WREN, A
+        bcf     INTCON, GIE, A
+update_timeout_l1:
+        bsf     EECON1, RD, A
+        movf    EEDATA, W, A
+        subwf   INDF0, W, A
+        bz      update_timeout_l2
+        movf    INDF0, W, A
+        movwf   EEDATA, A
+        movlw   0x55
+        movwf   EECON2, A
+        movlw   0xAA
+        movwf   EECON2, A
+        bsf     EECON1, WR, A
+        btfsc   EECON1, WR, A   ; wait for write to complete
+        bra     $-2
+update_timeout_l2:
+        movf    POSTINC0, W, A
+        incf    EEADR, F, A
+        decfsz  tmp, F, B
+        bra     update_timeout_l1
+
+        bcf     EECON1, WREN, A
+        bsf     INTCON, GIE, A
         return
 
         ;; convert the 16bit timeout value to BCD

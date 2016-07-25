@@ -24,7 +24,7 @@
 
 timeout res     2               ; timeout in seconds
 bstate  res     10              ; 10 debounces
-button  res     2               ; button status
+button  res     2               ; button status [0 = current, 1 = old]
 dbuf    res     9               ; display buffer
 tmp     res     2               ; temporary value
 flags   res     1               ; signaling flags

@@ -247,7 +247,7 @@ main_l3:
         movlw   1
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH
-        movwf   flags, B
+        iorwf   flags, B
 
 main_l4:
         ;; check the button PLUS

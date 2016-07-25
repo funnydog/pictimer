@@ -36,9 +36,9 @@ tsec	res	1		; counter of tick seconds
 B       equ     BANKED
 
 	;; flags
-LIGHT	equ	0
-REFRESH	equ	1
-LEADING	equ	2
+LIGHT	equ	0		; light on flag
+REFRESH	equ	1		; the display needs refresh
+LEADING	equ	2		; don't print the leading zero
 
         ;; main code
 .main  code
@@ -269,6 +269,9 @@ main_l5:
 	bsf	flags, REFRESH, B
 	bra	main_l1
 
+	;; initialize the display
+	;; duty cycle = 1/16
+	;; blink = off
 seg_init:
 	movlw	UPPER(seg_init_cmd)
 	movwf	TBLPTRU, A
@@ -286,6 +289,13 @@ seg_init:
 	bra	i2c_send_tbl
 seg_init_cmd	db	0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81
 
+	;; send the contents of dbuf
+	;; to the controller of the display
+	;; Positions of the digits
+	;;
+	;; 0123456789
+	;; d.d.:.d.d.
+	;;
 seg_send_buf:
 	call	i2c_start
 	movlw	0xE0
@@ -302,6 +312,7 @@ seg_send_l0:
 	bnz	seg_send_l0
 	bra	i2c_stop
 
+	;; clear the contents of dbuf
 seg_clear:
 	movlw	9
 	lfsr	FSR0, dbuf
@@ -311,6 +322,8 @@ seg_clear_l0:
 	bnz	seg_clear_l0
 	return
 
+	;; get the digit led mask for a given digit
+	;; taking into account the LEADING zero
 get_digit:
 	andlw	0x0F
 	bnz	get_digit_l0
@@ -338,7 +351,8 @@ get_digit_l2:
 	db	0x7F,0x6F,0x77,0x7C
 	db	0x39,0x5E,0x79,0x71
 
-	;; get_switches() - get the status of the switches
+	;; get the debounced status of the switches
+	;; the status is debounced in the timer ISR
 get_switches:
 	movlw	10
 	movwf	tmp, B
@@ -351,7 +365,8 @@ get_switches_l0:
 	movwf	button, B
 	return
 
-	;; convert the timeout in BCD
+	;; convert the 16bit timeout value to BCD
+	;; saving the digits in dbuf[0,2,6,8]
 b16_d5
         swapf   timeout+0, W, B	; partial ones sum in low byte
         addwf   timeout+0, W, B

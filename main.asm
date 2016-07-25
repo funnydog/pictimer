@@ -38,6 +38,11 @@ LIGHT   equ     0               ; light on flag
 REFRESH equ     1               ; the display needs refresh
 LEADING equ     2               ; don't print the leading zero
 
+        ;; buttons
+BSTART  equ     0               ; start
+BPLUS   equ     1               ; increase timeout
+BMINUS  equ     2               ; decrease timeout
+
         ;; main code
 .main  code
 isr:
@@ -46,11 +51,11 @@ isr:
 
         ;; handler for the CCP1IF interrupt
         btfss   PIR1, CCP1IF, A
-        bra     isr_end
+        bra     isr0_end
         bcf     PIR1, CCP1IF, A
 
-        banksel 0
         ;; save the current state of the buttons
+        movlb   0x0
         lfsr    FSR2, bstate
         movf    bindex, W, B
         addwf   FSR2L, F, A
@@ -71,6 +76,22 @@ isr:
         btfss   flags, LIGHT, B
         bra     isr0_end
 
+        ;; check if timeout is zero
+        movf    timeout+0, W, B
+        iorwf   timeout+1, W, B
+        bnz     isr0_l0
+
+        ;; timeout is zero
+        bcf     LATB, 2, A
+        bcf     flags, 0, B
+        movf    setout+0, W, B
+        movwf   timeout+0, B
+        movf    setout+1, W, B
+        movwf   timeout+1, B
+        bra     isr0_end
+
+        ;; timeout is not zero
+isr0_l0:
         ;; handle the seconds
         decfsz  tsec, F, B
         bra     isr0_end
@@ -83,19 +104,6 @@ isr:
         decf    timeout+0, F, B
         subwfb  timeout+1, F, B
 
-        ;; check if the value is zero
-        movf    timeout+0, W, B
-        iorwf   timeout+1, W, B
-        bnz     isr0_end
-
-        ;; timeout is zero
-        bcf     LATB, 2, A
-        bcf     flags, 0, B
-        movf    setout+0, W, B
-        movwf   timeout+0, B
-        movf    setout+1, W, B
-        movwf   timeout+1, B
-
 isr0_end:
 isr_end:
         retfie  FAST
@@ -107,7 +115,7 @@ start:
         clrf    ANSELA, B       ; ANSEL A/B/C are not in ACCESS BANK
         clrf    ANSELB, B
         clrf    ANSELC, B
-        clrf    LATA, B         ; clear the latches
+        clrf    LATA, B         ; clear the PORTA latches
         movlw   0x3F
         movwf   TRISA, B        ; set RA0..RA5 as inputs
         clrf    LATB, B         ; clear the PORTB latches
@@ -123,10 +131,10 @@ start:
         ;; initialize timeout
         movlw   LOW(65)
         movwf   setout+0, B
+        movwf   timeout+0, B
         movlw   HIGH(65)
         movwf   setout+1, B
-        movff   setout+0, timeout+0
-        movff   setout+1, timeout+1
+        movwf   timeout+1, B
 
         ;; initialize bstate
         lfsr    FSR0, bstate
@@ -216,7 +224,7 @@ main_l2:
         call    get_switches
 
         ;; check the button START
-        btfss   button, 0, B
+        btfss   button+0, BSTART, B
         bra     main_l3
 
         ;; check if timeout is zero
@@ -228,16 +236,16 @@ main_l2:
         movff   timeout+0, setout+0
         movff   timeout+1, setout+1
         bsf     LATB, 2, A
-        movlw   250
+        movlw   1
         movwf   tsec, B
         movlw   1<<LIGHT | 1<<REFRESH
         movwf   flags, B
 
 main_l3:
         ;; check the button PLUS
-        btfss   button, 1, B
+        btfss   button+0, BPLUS, B
         bra     main_l4
-        btfsc   button+1, 1, B
+        btfsc   button+1, BPLUS, B
         bra     main_l4
 
         ;; increase the seconds
@@ -248,9 +256,9 @@ main_l3:
 
 main_l4:
         ;; check the button MINUS
-        btfss   button, 2, B
+        btfss   button+0, BMINUS, B
         bra     main_l1
-        btfsc   button+1, 2, B
+        btfsc   button+1, BMINUS, B
         bra     main_l1
 
         ;; decrease the seconds

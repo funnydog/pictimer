@@ -1,7 +1,7 @@
         include "config.inc"
         global _udelay, _udc
 
-.ddata	udata_acs
+.ddata  udata_acs
 
 _udc    res     1               ; byte for high side
 

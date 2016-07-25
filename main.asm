@@ -289,11 +289,14 @@ main_l6:
         ;; blink = off
 seg_init:
         ltab    seg_init_cmd
+        movlw   4
+        movwf   tmp, B
+seg_init_l0:
         movlw   2
         call    i2c_send_tbl
-        call    i2c_send_tbl
-        call    i2c_send_tbl
-        bra     i2c_send_tbl
+        decfsz  tmp, F, B
+        bra     seg_init_l0
+        return
 seg_init_cmd    db      0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81
 
         ;; send the contents of dbuf

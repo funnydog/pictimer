@@ -105,22 +105,22 @@ isr_end:
 	;; main code
 start:
 	;; initialize the ports as digital outputs with value 0
-	movlb	0xF
+	movlb	0xF		; select the bank 0xF
 	clrf	ANSELA, B	; ANSEL A/B/C are not in ACCESS BANK
 	clrf	ANSELB, B
 	clrf	ANSELC, B
-	clrf	LATA, B
-	movlw	0xff
-	movwf	TRISA, B
-	clrf	TRISB, B
-	clrf	LATB, B
-	clrf	TRISC, B
-	clrf	LATC, B
+	clrf	LATA, B		; clear the latches
+	movlw	0x3F
+	movwf	TRISA, B	; set RA0..RA5 as inputs
+	clrf	LATB, B		; clear the PORTB latches
+	clrf	TRISB, B	; set RB0..RB7 as outputs
+	clrf	LATC, B		; clear the PORTC latches
+	clrf	TRISC, B	; set RC0..RC7 as outputs
 
 	;; speed up the internal clock to 16MHz
-	bsf	OSCCON, IRCF2, B
-	delaycy	65536
-	movlb	0x0
+	bsf	OSCCON, IRCF2, B ; increase the freq to 16MHz
+	delaycy	65536		 ; a small delay for things to settle
+	movlb	0x0		 ; select the bank 0
 
 	;; initialize timeout
 	movlw	LOW(65)
@@ -232,8 +232,8 @@ main_l2:
 	bsf	LATB, 2, A
 	movlw	250
 	movwf	tsec, B
-	bsf	flags, REFRESH, B
-	bsf	flags, LIGHT, B
+	movlw	1<<LIGHT | 1<<REFRESH
+	movwf	flags, B
 
 main_l3:
 	;; check the button PLUS

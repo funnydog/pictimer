@@ -15,7 +15,7 @@
 
         ;; constants
 B       equ     BANKED
-TIMEOUT equ     265
+TIMEOUT equ     10
 
         ;; flags
 LIGHTON equ     0               ; light on
@@ -186,16 +186,32 @@ main_l1:
         ;; check if the light has been turned off
         ;; and reset the timeout value
         btfss   flags, LGHTOFF, B
-        bra     main_l2
+        bra     main_l3
         bcf     flags, LGHTOFF, B
+
+        ;; blink the display
+        movlw   0x83
+        call    seg_write
+
+        movlw   40 * 4
+        movwf   tmp, B
+main_l2:
+        delaycy 50000
+        delaycy 50000
+        decfsz  tmp, F, B
+        bra     main_l2
+
+        ;; restore the display
+        movlw   0x81
+        call    seg_write
         call    read_timeout
         bsf     flags, REFRESH, B
 
-main_l2:
+main_l3:
         ;; check if we need to refresh the display
         ;; with the new values
         btfss   flags, REFRESH, B
-        bra     main_l3
+        bra     main_l4
 
         ;; 16bit to BCD conversion
         call    b16_d5
@@ -225,7 +241,7 @@ main_l2:
         bcf     flags, REFRESH, B
 
         ;; switches
-main_l3:
+main_l4:
         ;; if LIGHTON do not read the user input
         btfsc   flags, LIGHTON, B
         bra     main_l1
@@ -237,12 +253,12 @@ main_l3:
 
         ;; check the button START
         btfss   button+0, BSTART, B
-        bra     main_l4
+        bra     main_l5
 
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
-        bz      main_l4
+        bz      main_l5
 
         ;; set the start flags
         call    update_timeout
@@ -252,12 +268,12 @@ main_l3:
         movlw   1<<LIGHTON | 1<<REFRESH
         iorwf   flags, F, B
 
-main_l4:
+main_l5:
         ;; check the button PLUS
         btfss   button+0, BPLUS, B
-        bra     main_l5
+        bra     main_l6
         btfsc   button+1, BPLUS, B
-        bra     main_l5
+        bra     main_l6
 
         ;; increase the seconds
         incf    timeout+0, F, B
@@ -265,7 +281,7 @@ main_l4:
         incf    timeout+1, F, B
         bsf     flags, REFRESH, B
 
-main_l5:
+main_l6:
         ;; check the button MINUS
         btfss   button+0, BMINUS, B
         bra     main_l1
@@ -277,12 +293,12 @@ main_l5:
         decf    timeout+0, F, B
         btfss   STATUS, C, A
         decf    timeout+1, F, B
-        bc      main_l6
+        bc      main_l7
 
         ;; but not below 0
         clrf    timeout+0, B
         clrf    timeout+1, B
-main_l6:
+main_l7:
         bsf     flags, REFRESH, B
         bra     main_l1
 
@@ -299,7 +315,17 @@ seg_init_l0:
         decfsz  tmp, F, B
         bra     seg_init_l0
         return
-seg_init_cmd    db      0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81
+seg_init_cmd    db      0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81,0xE0,0x83
+
+        ;; write one byte to the display
+seg_write:
+        movwf   tmp, B
+        call    i2c_start
+        movlw   0xE0
+        call    i2c_write
+        movf    tmp, W, B
+        call    i2c_write
+        bra     i2c_stop
 
         ;; send the contents of dbuf
         ;; to the controller of the display

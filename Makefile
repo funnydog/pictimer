@@ -13,7 +13,7 @@ $(OUTPUT): $(OBJECTS)
 # explicit dependencies
 delay.o: config.inc
 i2c.o: config.inc
-main.o: config.inc delay.inc i2c.inc
+main.o: config.inc delay.inc i2c.inc macro.inc
 
 .PHONY = clean program sim
 

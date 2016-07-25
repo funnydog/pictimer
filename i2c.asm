@@ -5,6 +5,10 @@
 
 #define SPEED(x) (FOSC/1000/x)/4-1
 
+.i2data udata_acs
+
+cnt     res     1               ; for counting bytes
+
 .i2c    code
 
 i2c_init:
@@ -82,14 +86,14 @@ i2c_write:
         retlw   1               ; ack NOT received
 
 i2c_send_tbl:
+        movwf   cnt, A
         call    i2c_start
 i2c_send_tbl_loop:
         tblrd*+
         call    i2c_wait_idle
         movff   TABLAT, SSP1BUF
         call    i2c_wait_completed
-        addlw   -1
-        btfss   STATUS, Z, A
+        decfsz  cnt, F, A
         bra     i2c_send_tbl_loop
         bra     i2c_stop
 

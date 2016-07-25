@@ -1,6 +1,7 @@
         include "config.inc"
         include "delay.inc"
         include "i2c.inc"
+        include "macro.inc"
 
         ;; fuses configuration
         config  FOSC = INTOSCIO, CFGPLLEN = OFF, CPUDIV = NOCLKDIV
@@ -287,19 +288,11 @@ main_l6:
         ;; duty cycle = 1/16
         ;; blink = off
 seg_init:
-        movlw   UPPER(seg_init_cmd)
-        movwf   TBLPTRU, A
-        movlw   HIGH(seg_init_cmd)
-        movwf   TBLPTRH, A
-        movlw   LOW(seg_init_cmd)
-        movwf   TBLPTRL, A
+        ltab    seg_init_cmd
         movlw   2
         call    i2c_send_tbl
-        movlw   2
         call    i2c_send_tbl
-        movlw   2
         call    i2c_send_tbl
-        movlw   2
         bra     i2c_send_tbl
 seg_init_cmd    db      0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81
 
@@ -344,22 +337,12 @@ get_digit:
         btfsc   flags, LEADING, B
         retlw   0
 get_digit_l0:
-        movwf   TBLPTRL, A
-        movlw   HIGH(get_digit_l2)
-        movwf   TBLPTRH, A
-        movlw   UPPER(get_digit_l2)
-        movwf   TBLPTRU, A
-        movlw   LOW(get_digit_l2)
-        addwf   TBLPTRL, F, A
-        bnc     get_digit_l1
-        incfsz  TBLPTRH, F, A
-        incf    TBLPTRU, F, A
-get_digit_l1:
+        ltabw   get_digit_l1
         tblrd   *
         movf    TABLAT, W, A
         bcf     flags, LEADING, B
         return
-get_digit_l2:
+get_digit_l1:
         db      0x3F,0x06,0x5B,0x4F
         db      0x66,0x6D,0x7D,0x07
         db      0x7F,0x6F,0x77,0x7C

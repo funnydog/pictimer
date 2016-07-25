@@ -27,10 +27,12 @@ LEADING equ     3               ; don't print the leading zero
 BSTART  equ     0               ; start
 BPLUS   equ     1               ; increase timeout
 BMINUS  equ     2               ; decrease timeout
+BTOGGLE equ     3               ; toggle full/half rows
 
 .data   udata
 
 timeout res     2               ; timeout in seconds
+halflit res     1               ; 1 if half lit, 0 if full lit
 bstate  res     10              ; 10 debounces
 button  res     2               ; button status [0 = current, 1 = old]
 dbuf    res     9               ; display buffer
@@ -41,7 +43,8 @@ tsec    res     1               ; counter of tick seconds
 
 .edata  code    0xF00000
 
-saved   de      LOW(TIMEOUT), HIGH(TIMEOUT) ; saved timeout data
+        ;; variables stored in EEPROM: timeoutL, timeoutH, halflit
+saved   de      LOW(TIMEOUT), HIGH(TIMEOUT), 0
 
         ;; entry code section
 .reset  code    0x0000
@@ -89,7 +92,8 @@ isr:
         bnz     isr0_l0
 
         ;; timeout is zero
-        bcf     LATB, 2, A
+        movlw   ~(1<<2 | 1<<3)
+        andwf   LATB, F, A
         bcf     flags, LIGHTON, B
         bsf     flags, LGHTOFF, B
         bra     isr0_end
@@ -132,8 +136,8 @@ start:
         delaycy 65536            ; a small delay for things to settle
         movlb   0x0              ; select the bank 0
 
-        ;; initialize timeout
-        call    read_timeout
+        ;; initialize timeout and halflit
+        call    read_eeprom
 
         ;; initialize bstate
         lfsr    FSR0, bstate
@@ -204,7 +208,7 @@ main_l2:
         ;; restore the display
         movlw   0x81
         call    seg_write
-        call    read_timeout
+        call    read_eeprom
         bsf     flags, REFRESH, B
 
 main_l3:
@@ -222,25 +226,31 @@ main_l3:
         bsf     flags, LEADING, B
         movf    dbuf+0, W, B    ; most significant digit
         call    get_digit
+        iorlw   0x80            ; dot always on
         movwf   dbuf+0, B
 
         movf    dbuf+2, W, B
         call    get_digit
+        btfss   halflit, 0, B
+        iorlw   0x80            ; dot on when halflit == 0
         movwf   dbuf+2, B
 
         movf    dbuf+6, W, B
         call    get_digit
+        iorlw   0x80            ; dot always on
         movwf   dbuf+6, B
 
         bcf     flags, LEADING, B
         movf    dbuf+8, W, B    ; least significant digit
         call    get_digit
+        btfss   halflit, 0, B
+        iorlw   0x80            ; dot on when halflit == 0
         movwf   dbuf+8, B
 
         call    seg_send_buf
         bcf     flags, REFRESH, B
 
-        ;; switches
+        ;; switches handlers
 main_l4:
         ;; if LIGHTON do not read the user input
         btfsc   flags, LIGHTON, B
@@ -261,8 +271,11 @@ main_l4:
         bz      main_l5
 
         ;; set the start flags
-        call    update_timeout
-        bsf     LATB, 2, A
+        call    update_eeprom
+        movlw   1<<2            ; RB2
+        btfss   halflit, 0, B
+        movlw   1<<2 | 1<<3     ; RB3 and RB2
+        iorwf   LATB, F, A      ; lit
         movlw   1
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH
@@ -284,9 +297,9 @@ main_l5:
 main_l6:
         ;; check the button MINUS
         btfss   button+0, BMINUS, B
-        bra     main_l1
+        bra     main_l8
         btfsc   button+1, BMINUS, B
-        bra     main_l1
+        bra     main_l8
 
         ;; decrease the seconds
         movlw   0
@@ -300,6 +313,18 @@ main_l6:
         clrf    timeout+1, B
 main_l7:
         bsf     flags, REFRESH, B
+
+main_l8:
+        ;; toggle half/full fluorescent lamps
+        btfss   button+0, BTOGGLE, B
+        bra     main_l1
+        btfsc   button+1, BTOGGLE, B
+        bra     main_l1
+
+        ;; toggle the bit 0 of halflit and REFRESH
+        btg     halflit, 0, B
+        bsf     flags, REFRESH, B
+
         bra     main_l1
 
         ;; initialize the display
@@ -393,28 +418,27 @@ get_switches_l0:
         movwf   button, B
         return
 
-        ;; read the timeout in EEPROM
-read_timeout:
+        ;; read timeout and halflit from EEPROM
+read_eeprom:
         lfsr    FSR0, timeout
         movlw   saved+0
         movwf   EEADR, A
         bcf     EECON1, EEPGD, A
         bcf     EECON1, CFGS, A
-        movlw   2
+        movlw   3
         movwf   tmp, B
-read_timeout_l0:
+read_eeprom_l0:
         bsf     EECON1, RD, A
         movf    EEDATA, W, A
         movwf   POSTINC0, A
         incf    EEADR, F, A
         decfsz  tmp, F, B
-        bra     read_timeout_l0
+        bra     read_eeprom_l0
         return
 
-        ;; update the timeout in EEPROM
-        ;; when different from timeout in memory
-update_timeout:
-        movlw   2
+        ;; update timeout and halflit in EEPROM
+update_eeprom:
+        movlw   3
         movwf   tmp, B
         lfsr    FSR0, timeout
         movlw   saved+0
@@ -423,11 +447,11 @@ update_timeout:
         bcf     EECON1, EEPGD, A
         bsf     EECON1, WREN, A
         bcf     INTCON, GIE, A
-update_timeout_l1:
+update_eeprom_l1:
         bsf     EECON1, RD, A
         movf    EEDATA, W, A
         subwf   INDF0, W, A
-        bz      update_timeout_l2
+        bz      update_eeprom_l2
         movf    INDF0, W, A
         movwf   EEDATA, A
         movlw   0x55
@@ -437,11 +461,11 @@ update_timeout_l1:
         bsf     EECON1, WR, A
         btfsc   EECON1, WR, A   ; wait for write to complete
         bra     $-2
-update_timeout_l2:
+update_eeprom_l2:
         movf    POSTINC0, W, A
         incf    EEADR, F, A
         decfsz  tmp, F, B
-        bra     update_timeout_l1
+        bra     update_eeprom_l1
 
         bcf     EECON1, WREN, A
         bsf     INTCON, GIE, A

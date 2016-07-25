@@ -13,12 +13,19 @@
         config  WRT0 = OFF, WRT1 = OFF, WRT2 = OFF, WRT3 = OFF, WRTB = OFF, WRTD = OFF
         config  EBTR0 = OFF, EBTR1 = OFF, EBTR2 = OFF, EBTR3 = OFF, EBTRB = OFF
 
-        ;; entry code section
-.reset  code    0x0000
-        bra     start
+        ;; constants
+B       equ     BANKED
 
-.isr    code    0x0008
-        bra     isr
+        ;; flags
+LIGHTON equ     0               ; light on
+LGHTOFF equ     1               ; light off
+REFRESH equ     2               ; the display needs refresh
+LEADING equ     3               ; don't print the leading zero
+
+        ;; buttons
+BSTART  equ     0               ; start
+BPLUS   equ     1               ; increase timeout
+BMINUS  equ     2               ; decrease timeout
 
 .data   udata
 
@@ -35,18 +42,12 @@ tsec    res     1               ; counter of tick seconds
 
 saved   de      LOW(65), HIGH(65) ; saved timeout data
 
-B       equ     BANKED
+        ;; entry code section
+.reset  code    0x0000
+        bra     start
 
-        ;; flags
-LIGHTON equ     0               ; light on
-LGHTOFF equ     1               ; light off
-REFRESH equ     2               ; the display needs refresh
-LEADING equ     3               ; don't print the leading zero
-
-        ;; buttons
-BSTART  equ     0               ; start
-BPLUS   equ     1               ; increase timeout
-BMINUS  equ     2               ; decrease timeout
+.isr    code    0x0008
+        bra     isr
 
         ;; main code
 .main  code

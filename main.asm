@@ -86,6 +86,12 @@ isr:
         btfss   flags, LIGHTON, B
         bra     isr0_end
 
+        ;; handle the seconds
+        decfsz  tsec, F, B
+        bra     isr0_end
+        movlw   250
+        movwf   tsec, B
+
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
@@ -98,14 +104,8 @@ isr:
         bsf     flags, LGHTOFF, B
         bra     isr0_end
 
-        ;; timeout is not zero
 isr0_l0:
-        ;; handle the seconds
-        decfsz  tsec, F, B
-        bra     isr0_end
-        movlw   250
-        movwf   tsec, B
-
+        ;; timeout is not zero
         ;; decrease the timeout
         bsf     flags, REFRESH, B
         movlw   0

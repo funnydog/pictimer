@@ -157,7 +157,7 @@ main_l0:
         movwf   tsec, B
 
         ;; initialize the periodicc TMR1
-        ;; period = 16000 * 0.25 nsec = 4msec
+        ;; period = 16000 * 0.25 usec = 4msec
         clrf    T1CON, A        ; no prescaler
         clrf    TMR1H, A
         clrf    TMR1L, A
@@ -167,7 +167,7 @@ main_l0:
         movlw   HIGH(16000-1)
         movwf   CCPR1H, A
         movlw   LOW(16000-1)
-        movwf   CCPR1L, A       ; set a period of 16000 * 0.25 nsec
+        movwf   CCPR1L, A       ; set a period of 16000 * 0.25 usec
 
         ;; enable the interrupts
         bcf     PIR1, CCP1IF, A

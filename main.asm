@@ -16,6 +16,8 @@
         ;; constants
 B       equ     BANKED
 TIMEOUT equ     10
+PORTL1  equ     3               ; port for the 1st set of lights
+PORTL2  equ     4               ; port for the 2nd set of lights
 
         ;; flags
 LIGHTON equ     0               ; light on
@@ -56,13 +58,10 @@ saved   de      LOW(TIMEOUT), HIGH(TIMEOUT), 0
         ;; main code
 .main  code
 isr:
-        ;; debug AID
-        btg     LATB, 3, A
-
-        ;; handler for the CCP1IF interrupt
-        btfss   PIR1, CCP1IF, A
+        ;; handler for the CCP2IF interrupt
+        btfss   PIR2, CCP2IF, A
         bra     isr0_end
-        bcf     PIR1, CCP1IF, A
+        bcf     PIR2, CCP2IF, A
 
         ;; save the current state of the buttons
         movlb   0x0
@@ -98,7 +97,7 @@ isr:
         bnz     isr0_l0
 
         ;; timeout is zero
-        movlw   ~(1<<2 | 1<<3)
+        movlw   ~(1<<PORTL1 | 1<<PORTL2)
         andwf   LATB, F, A
         bcf     flags, LIGHTON, B
         bsf     flags, LGHTOFF, B
@@ -149,34 +148,41 @@ main_l0:
 
         ;; initialize dbuf
         call    seg_clear
-
-        ;; acs variables
         clrf    flags, B
         clrf    bindex, B
         movlw   250
         movwf   tsec, B
 
-        ;; initialize the periodicc TMR1
+        ;; initialize the periodic TMR1
         ;; period = 16000 * 0.25 usec = 4msec
-        clrf    T1CON, A        ; no prescaler
-        clrf    TMR1H, A
-        clrf    TMR1L, A
-        movlw   0x0B            ; configure CCP for special event
-        movwf   CCP1CON, A
-        bcf     CCPTMRS, C1TSEL ; configure CCP for TMR1
+        movlb   0xF
+        clrf    T1CON, B        ; no prescaler
+        clrf    TMR1H, B
+        clrf    TMR1L, B
+        movlw   0x0B            ; configure CCP2 for special event
+        movwf   CCP2CON, B
+        bcf     CCPTMRS, C2TSEL, B ; not in ACCESS bank!!!
         movlw   HIGH(16000-1)
-        movwf   CCPR1H, A
+        movwf   CCPR2H, B
         movlw   LOW(16000-1)
-        movwf   CCPR1L, A       ; set a period of 16000 * 0.25 usec
+        movwf   CCPR2L, B       ; set a period of 16000 * 0.25 usec
+
+        ;; PWM for the acoustic signal
+        ;; set TMR2 for a 1:16 prescaler and 125 tticks period
+        movlw   0x06
+        movwf   T2CON, B        ; 1:16 prescaler
+        movlw   124             ; 125-1
+        movwf   PR2, B          ; (124+1) * 4 / 16Mhz *16 = 500 usec = 2kHz
 
         ;; enable the interrupts
-        bcf     PIR1, CCP1IF, A
-        bsf     PIE1, CCP1IE, A
-        bsf     INTCON, GIE, A
-        bsf     INTCON, PEIE, A
+        bcf     PIR2, CCP2IF, B
+        bsf     PIE2, CCP2IE, B
+        bsf     INTCON, GIE, B
+        bsf     INTCON, PEIE, B
 
         ;; enable TMR1
-        bsf     T1CON, TMR1ON, A
+        bsf     T1CON, TMR1ON, B
+        movlb   0x0
 
         ;; initialize I2C support
         call    i2c_init
@@ -197,11 +203,21 @@ main_l1:
         movlw   0x83
         call    seg_write
 
-        movlw   40 * 4
+        ;; busy wait for 160 * (12.5 + 12.5) msec = 4 sec
+        movlw   40 * 4          ; 160 times
         movwf   tmp, B
+
 main_l2:
-        delaycy 50000
-        delaycy 50000
+        ;; set the duty cycle to 50% and claim RB2 to PWM
+        movlw   0x0C | (250 & 3)<<6
+        movwf   CCP1CON, A
+        movlw   250>>2
+        movwf   CCPR1L, A
+        delaycy (50000-4)       ; 12.5 msec
+
+        ;; disable PWM on RB2
+        clrf    CCP1CON, A
+        delaycy (50000-4)       ; 12.5 msec
         decfsz  tmp, F, B
         bra     main_l2
 
@@ -272,9 +288,9 @@ main_l4:
 
         ;; set the start flags
         call    update_eeprom
-        movlw   1<<2            ; RB2
+        movlw   1<<PORTL1
         btfss   halflit, 0, B
-        movlw   1<<2 | 1<<3     ; RB3 and RB2
+        movlw   1<<PORTL1 | 1<<PORTL2
         iorwf   LATB, F, A      ; lit
         movlw   1
         movwf   tsec, B

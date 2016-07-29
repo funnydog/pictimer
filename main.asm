@@ -15,7 +15,9 @@
 
         ;; constants
 B       equ     BANKED
-TIMEOUT equ     10
+TIMEOUT equ     10              ; default timeout
+
+        ;; relay ports
 PORTL1  equ     3               ; port for the 1st set of lights
 PORTL2  equ     4               ; port for the 2nd set of lights
 
@@ -35,7 +37,7 @@ BTOGGLE equ     3               ; toggle full/half rows
 
 timeout res     2               ; timeout in seconds
 halflit res     1               ; 1 if half lit, 0 if full lit
-bstate  res     10              ; 10 debounces
+bstate  res     10              ; 10 debounces of 4ms each
 button  res     2               ; button status [0 = current, 1 = old]
 dbuf    res     9               ; display buffer
 tmp     res     2               ; temporary value
@@ -368,13 +370,11 @@ seg_write:
         call    i2c_write
         bra     i2c_stop
 
-        ;; send the contents of dbuf
-        ;; to the controller of the display
-        ;; Positions of the digits
+        ;; display the contents of dbuf
         ;;
+        ;; Positions of the digits:
         ;; 0123456789
-        ;; d.d.:.d.d.
-        ;;
+        ;; d d : d d
 seg_send_buf:
         call    i2c_start
         movlw   0xE0

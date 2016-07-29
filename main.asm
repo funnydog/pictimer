@@ -16,6 +16,8 @@
         ;; constants
 B       equ     BANKED
 TIMEOUT equ     10              ; default timeout
+TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
+TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
 
         ;; relay ports
 PORTL1  equ     3               ; port for the 1st set of lights
@@ -26,6 +28,7 @@ LIGHTON equ     0               ; light on
 LGHTOFF equ     1               ; light off
 REFRESH equ     2               ; the display needs refresh
 LEADING equ     3               ; don't print the leading zero
+REPEAT  equ     4               ; key repeat fired
 
         ;; buttons
 BSTART  equ     0               ; start
@@ -38,12 +41,13 @@ BTOGGLE equ     3               ; toggle full/half rows
 timeout res     2               ; timeout in seconds
 halflit res     1               ; 1 if half lit, 0 if full lit
 bstate  res     10              ; 10 debounces of 4ms each
-button  res     2               ; button status [0 = current, 1 = old]
+button  res     2               ; button status [0 = current, 1 = old ]
 dbuf    res     9               ; display buffer
 tmp     res     2               ; temporary value
 flags   res     1               ; signaling flags
 bindex  res     1               ; current index
 tsec    res     1               ; counter of tick seconds
+tdel    res     1               ; repeat delay counter
 
 .edata  code    0xF00000
 
@@ -83,6 +87,14 @@ isr:
         btfsc   STATUS, C, A
         clrf    bindex, B
 
+        ;; decrease or replenish tdel
+        decf    tdel, F, B
+        bnz     isr0_l0
+        movlw   TREPEAT
+        movwf   tdel, B
+        bsf     flags, REPEAT, B
+isr0_l0:
+
         ;; do not count seconds if not needed
         btfss   flags, LIGHTON, B
         bra     isr0_end
@@ -96,7 +108,7 @@ isr:
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
-        bnz     isr0_l0
+        bnz     isr0_l1
 
         ;; timeout is zero
         movlw   ~(1<<PORTL1 | 1<<PORTL2)
@@ -105,7 +117,7 @@ isr:
         bsf     flags, LGHTOFF, B
         bra     isr0_end
 
-isr0_l0:
+isr0_l1:
         ;; timeout is not zero
         ;; decrease the timeout
         bsf     flags, REFRESH, B
@@ -301,10 +313,9 @@ main_l4:
 
 main_l5:
         ;; check the button PLUS
-        btfss   button+0, BPLUS, B
-        bra     main_l6
-        btfsc   button+1, BPLUS, B
-        bra     main_l6
+        movlw   1 << BPLUS
+        call    get_repeat
+        bnc     main_l6
 
         ;; increase the seconds
         incf    timeout+0, F, B
@@ -314,10 +325,9 @@ main_l5:
 
 main_l6:
         ;; check the button MINUS
-        btfss   button+0, BMINUS, B
-        bra     main_l8
-        btfsc   button+1, BMINUS, B
-        bra     main_l8
+        movlw   1 << BMINUS
+        call    get_repeat
+        bnc     main_l8
 
         ;; decrease the seconds
         movlw   0
@@ -333,11 +343,10 @@ main_l7:
         bsf     flags, REFRESH, B
 
 main_l8:
-        ;; toggle half/full fluorescent lamps
-        btfss   button+0, BTOGGLE, B
-        bra     main_l1
-        btfsc   button+1, BTOGGLE, B
-        bra     main_l1
+        ;; check the button TOGGLE
+        movlw   1 << BTOGGLE
+        call    get_repeat
+        bnc     main_l1
 
         ;; toggle the bit 0 of halflit and REFRESH
         btg     halflit, 0, B
@@ -432,6 +441,26 @@ get_switches_l0:
         decfsz  tmp, F, B
         bra     get_switches_l0
         movwf   button, B
+        return
+
+        ;; set the carry flag if the button has to be signaled
+        ;; W = 1 << button
+get_repeat:
+        bcf     STATUS, C, A
+        andwf   button+0, W, B
+        bz      get_repeat_skip
+        andwf   button+1, W, B
+        bz      get_repeat_first
+        btfsc   flags, REPEAT, B
+        bra     get_repeat_signal
+        bra     get_repeat_skip
+get_repeat_first:
+        movlw   TDELAY
+        movwf   tdel, B
+get_repeat_signal:
+        bcf     flags, REPEAT, B
+        bsf     STATUS, C, A
+get_repeat_skip:
         return
 
         ;; read timeout and halflit from EEPROM

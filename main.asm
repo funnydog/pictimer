@@ -205,12 +205,18 @@ main_l0:
         ;; write some numbers
         bcf     flags, LIGHTON, B
         bsf     flags, REFRESH, B
+main_loop:
+        call    task1           ; check countdown
+        call    task2           ; refresh the display
+        call    task3           ; sample the inputs
+        bra     main_loop
 
-main_l1:
-        ;; check if the light has been turned off
+        ;; check if the countdown is complete
+        ;; and emit a signal when done
+task1:
         ;; and reset the timeout value
         btfss   flags, LGHTOFF, B
-        bra     main_l3
+        return
         bcf     flags, LGHTOFF, B
 
         ;; blink the display
@@ -221,7 +227,7 @@ main_l1:
         movlw   40 * 4          ; 160 times
         movwf   tmp, B
 
-main_l2:
+task1_l0:
         ;; set the duty cycle to 50% and claim RB2 to PWM
         movlw   0x0C | (250 & 3)<<6
         movwf   CCP1CON, A
@@ -233,19 +239,19 @@ main_l2:
         clrf    CCP1CON, A
         delaycy (50000-4)       ; 12.5 msec
         decfsz  tmp, F, B
-        bra     main_l2
+        bra     task1_l0
 
         ;; restore the display
         movlw   0x81
         call    seg_write
         call    read_eeprom
         bsf     flags, REFRESH, B
+        return
 
-main_l3:
-        ;; check if we need to refresh the display
-        ;; with the new values
+        ;; refresh the display with the new data
+task2:
         btfss   flags, REFRESH, B
-        bra     main_l4
+        return
 
         ;; 16bit to BCD conversion
         call    b16_d5
@@ -277,14 +283,14 @@ main_l3:
         iorlw   0x80            ; dot on when halflit == 0
         movwf   dbuf+8, B
 
-        call    seg_send_buf
         bcf     flags, REFRESH, B
+        bra     seg_send_buf
 
-        ;; switches handlers
-main_l4:
+        ;; handle the switches/keys
+task3:
         ;; if LIGHTON do not read the user input
         btfsc   flags, LIGHTON, B
-        bra     main_l1
+        return
 
         ;; read the buttons, save the old read
         movf    button+0, W, B
@@ -293,14 +299,14 @@ main_l4:
 
         ;; check the button START
         btfss   button+0, BSTART, B
-        bra     main_l5
+        bra     task3_bplus
 
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
-        bz      main_l5
+        bz      task3_bplus
 
-        ;; set the start flags
+        ;; start the countdown
         call    update_eeprom
         movlw   1<<PORTL1
         btfss   halflit, 0, B
@@ -310,12 +316,13 @@ main_l4:
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH
         iorwf   flags, F, B
+        return
 
-main_l5:
+task3_bplus:
         ;; check the button PLUS
         movlw   1 << BPLUS
         call    get_repeat
-        bnc     main_l6
+        bnc     task3_bminus
 
         ;; increase the seconds
         incf    timeout+0, F, B
@@ -323,36 +330,36 @@ main_l5:
         incf    timeout+1, F, B
         bsf     flags, REFRESH, B
 
-main_l6:
+task3_bminus:
         ;; check the button MINUS
         movlw   1 << BMINUS
         call    get_repeat
-        bnc     main_l8
+        bnc     task3_btoggle
 
         ;; decrease the seconds
         movlw   0
         decf    timeout+0, F, B
         btfss   STATUS, C, A
         decf    timeout+1, F, B
-        bc      main_l7
+        bc      task3_bminus_l0
 
         ;; but not below 0
         clrf    timeout+0, B
         clrf    timeout+1, B
-main_l7:
+task3_bminus_l0:
         bsf     flags, REFRESH, B
 
-main_l8:
+task3_btoggle:
         ;; check the button TOGGLE
         movlw   1 << BTOGGLE
         call    get_repeat
-        bnc     main_l1
+        bnc     task3_end
 
         ;; toggle the bit 0 of halflit and REFRESH
         btg     halflit, 0, B
         bsf     flags, REFRESH, B
-
-        bra     main_l1
+task3_end:
+        return
 
         ;; initialize the display
         ;; duty cycle = 1/16

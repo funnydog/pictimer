@@ -20,8 +20,9 @@ TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
 TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
 
         ;; relay ports
-PORTL1  equ     3               ; port for the 1st set of lights
-PORTL2  equ     4               ; port for the 2nd set of lights
+LATREL  equ     LATC
+PORTR1  equ     0               ; port for the 1st set of lights
+PORTR2  equ     1               ; port for the 2nd set of lights
 
         ;; flags
 LIGHTON equ     0               ; light on
@@ -111,8 +112,9 @@ isr0_l0:
         bnz     isr0_l1
 
         ;; timeout is zero
-        movlw   ~(1<<PORTL1 | 1<<PORTL2)
-        andwf   LATB, F, A
+        bcf     LATA, 5, A
+        movlw   ~(1<<PORTR1 | 1<<PORTR2)
+        andwf   LATREL, F, A
         bcf     flags, LIGHTON, B
         bsf     flags, LGHTOFF, B
         bra     isr0_end
@@ -137,11 +139,11 @@ start:
         clrf    ANSELB, B
         clrf    ANSELC, B
         clrf    LATA, B         ; clear the PORTA latches
-        movlw   0x3F
-        movwf   TRISA, B        ; set RA0..RA5 as inputs
+        movlw   0x1F
+        movwf   TRISA, B        ; set RA0..RA4 as inputs, RA5 as output
         clrf    LATB, B         ; clear the PORTB latches
         clrf    TRISB, B        ; set RB0..RB7 as outputs
-        clrf    LATC, B         ; clear the PORTC latches
+        clrf    LATREL, B         ; clear the PORTC latches
         clrf    TRISC, B        ; set RC0..RC7 as outputs
 
         ;; speed up the internal clock to 16MHz
@@ -227,19 +229,19 @@ task1:
         movlw   40 * 4          ; 160 times
         movwf   tmp, B
 
-task1_l0:
         ;; set the duty cycle to 50% and claim RB2 to PWM
         movlw   0x0C | (250 & 3)<<6
         movwf   CCP1CON, A
         movlw   250>>2
         movwf   CCPR1L, A
+task1_l0:
         delaycy (50000-4)       ; 12.5 msec
-
-        ;; disable PWM on RB2
-        clrf    CCP1CON, A
         delaycy (50000-4)       ; 12.5 msec
         decfsz  tmp, F, B
         bra     task1_l0
+
+        ;; disable PWM on RB2
+        clrf    CCP1CON, A
 
         ;; restore the display
         movlw   0x81
@@ -308,10 +310,11 @@ task3:
 
         ;; start the countdown
         call    update_eeprom
-        movlw   1<<PORTL1
+        bsf     LATA, 5, A
+        movlw   1<<PORTR1
         btfss   halflit, 0, B
-        movlw   1<<PORTL1 | 1<<PORTL2
-        iorwf   LATB, F, A      ; lit
+        movlw   1<<PORTR1 | 1<<PORTR2
+        iorwf   LATREL, F, A      ; lit
         movlw   1
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH

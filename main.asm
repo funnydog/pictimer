@@ -19,11 +19,6 @@ TIMEOUT equ     10              ; default timeout
 TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
 TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
 
-        ;; relay ports
-LATREL  equ     LATC
-PORTR1  equ     0               ; port for the 1st set of lights
-PORTR2  equ     1               ; port for the 2nd set of lights
-
         ;; flags
 LIGHTON equ     0               ; light on
 LGHTOFF equ     1               ; light off
@@ -40,7 +35,7 @@ BTOGGLE equ     3               ; toggle full/half rows
 .data   udata
 
 timeout res     2               ; timeout in seconds
-halflit res     1               ; 1 if half lit, 0 if full lit
+rmask   res     1               ; bitmask with relays on
 bstate  res     10              ; 10 debounces of 4ms each
 button  res     2               ; button status [0 = current, 1 = old ]
 dbuf    res     9               ; display buffer
@@ -52,8 +47,8 @@ tdel    res     1               ; repeat delay counter
 
 .edata  code    0xF00000
 
-        ;; variables stored in EEPROM: timeoutL, timeoutH, halflit
-saved   de      LOW(TIMEOUT), HIGH(TIMEOUT), 0
+        ;; variables stored in EEPROM: timeoutL, timeoutH, rmask
+saved   de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
 
         ;; entry code section
 .reset  code    0x0000
@@ -112,9 +107,9 @@ isr0_l0:
         bnz     isr0_l1
 
         ;; timeout is zero
-        bcf     LATA, 5, A
-        movlw   ~(1<<PORTR1 | 1<<PORTR2)
-        andwf   LATREL, F, A
+        bcf     LATA, 5, A      ; keyboard led off
+        movlw   ~3
+        andwf   LATC, F, A      ; relays off
         bcf     flags, LIGHTON, B
         bsf     flags, LGHTOFF, B
         bra     isr0_end
@@ -143,7 +138,7 @@ start:
         movwf   TRISA, B        ; set RA0..RA4 as inputs, RA5 as output
         clrf    LATB, B         ; clear the PORTB latches
         clrf    TRISB, B        ; set RB0..RB7 as outputs
-        clrf    LATREL, B         ; clear the PORTC latches
+        clrf    LATC, B         ; clear the PORTC latches
         clrf    TRISC, B        ; set RC0..RC7 as outputs
 
         ;; speed up the internal clock to 16MHz
@@ -151,7 +146,7 @@ start:
         delaycy 65536            ; a small delay for things to settle
         movlb   0x0              ; select the bank 0
 
-        ;; initialize timeout and halflit
+        ;; load the settings in eeprom
         call    read_eeprom
 
         ;; initialize bstate
@@ -264,25 +259,27 @@ task2:
         bsf     flags, LEADING, B
         movf    dbuf+0, W, B    ; most significant digit
         call    get_digit
-        iorlw   0x80            ; dot always on
+        btfsc   rmask, 0, B
+        iorlw   0x80            ; dot on when rmask bit 0 != 0
         movwf   dbuf+0, B
 
         movf    dbuf+2, W, B
         call    get_digit
-        btfss   halflit, 0, B
-        iorlw   0x80            ; dot on when halflit == 0
+        btfsc   rmask, 1, B
+        iorlw   0x80            ; dot on when rmask bit 1 != 0
         movwf   dbuf+2, B
 
         movf    dbuf+6, W, B
         call    get_digit
-        iorlw   0x80            ; dot always on
+        btfsc   rmask, 0, B
+        iorlw   0x80            ; dot on when rmask bit 0 != 0
         movwf   dbuf+6, B
 
         bcf     flags, LEADING, B
         movf    dbuf+8, W, B    ; least significant digit
         call    get_digit
-        btfss   halflit, 0, B
-        iorlw   0x80            ; dot on when halflit == 0
+        btfsc   rmask, 1, B
+        iorlw   0x80            ; dot on when rmask bit 1 != 0
         movwf   dbuf+8, B
 
         bcf     flags, REFRESH, B
@@ -311,10 +308,8 @@ task3:
         ;; start the countdown
         call    update_eeprom
         bsf     LATA, 5, A
-        movlw   1<<PORTR1
-        btfss   halflit, 0, B
-        movlw   1<<PORTR1 | 1<<PORTR2
-        iorwf   LATREL, F, A      ; lit
+        movf    rmask, W, B
+        iorwf   LATC, F, A      ; lit
         movlw   1
         movwf   tsec, B
         movlw   1<<LIGHTON | 1<<REFRESH
@@ -358,9 +353,16 @@ task3_btoggle:
         call    get_repeat
         bnc     task3_end
 
-        ;; toggle the bit 0 of halflit and REFRESH
-        btg     halflit, 0, B
+        ;; increase rmask and rollover to 1
+        ;; if greater than 3
         bsf     flags, REFRESH, B
+        incf    rmask, F, B
+        movf    rmask, W, B
+        addlw   255 - 3
+        addlw   (3 - 1) + 1
+        bc      task3_end
+        movlw   1
+        movwf   rmask, B
 task3_end:
         return
 
@@ -473,7 +475,7 @@ get_repeat_signal:
 get_repeat_skip:
         return
 
-        ;; read timeout and halflit from EEPROM
+        ;; read timeout and rmask from EEPROM
 read_eeprom:
         lfsr    FSR0, timeout
         movlw   saved+0
@@ -491,7 +493,7 @@ read_eeprom_l0:
         bra     read_eeprom_l0
         return
 
-        ;; update timeout and halflit in EEPROM
+        ;; update timeout and rmask in EEPROM
 update_eeprom:
         movlw   3
         movwf   tmp, B

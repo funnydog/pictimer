@@ -179,11 +179,13 @@ main_l0:
         movwf   CCPR2L, B       ; set a period of 16000 * 0.25 usec
 
         ;; PWM for the acoustic signal
-        ;; set TMR2 for a 1:16 prescaler and 125 tticks period
+        ;; set TMR2 for a 1:16 prescaler and 103 ticks period
+        ;; (i.e. 416 usec) that matches the resonant frequency
+        ;; of the buzzer (2400 Hz)
         movlw   0x06
         movwf   T2CON, B        ; 1:16 prescaler
-        movlw   124             ; 125-1
-        movwf   PR2, B          ; (124+1) * 4 / 16Mhz *16 = 500 usec = 2kHz
+        movlw   103             ; 104 - 1
+        movwf   PR2, B          ; (103 + 1) * 4 / 16Mhz *16 = 416 usec
 
         ;; enable the interrupts
         bcf     PIR2, CCP2IF, B

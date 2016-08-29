@@ -40,6 +40,7 @@ BPLUS   equ     1               ; increase the timeout
 BMINUS  equ     2               ; decrease the timeout
 BTOGGLE equ     3               ; toggle full/1st half/2nd half rows
 BSLOT   equ     4               ; increase the slot number
+KBLED   equ     5               ; keyboard led (output)
 
 .data   udata
 
@@ -289,7 +290,7 @@ task1_alt_loop:
         bra     task1_pwm_on
 
         ;; PWM OFF, display OFF, KBLED OFF for odd buzcnt
-        bcf     LATA, 5, A
+        bcf     LATA, KBLED, A
         movlw   0xF0
         andwf   CCP1CON, F, A
         movlw   0x80
@@ -297,7 +298,7 @@ task1_alt_loop:
 
         ;; PWM ON, display ON, KBLED ON for even buzcnt
 task1_pwm_on:
-        bsf     LATA, 5, A
+        bsf     LATA, KBLED, A
         movlw   0x0C
         iorwf   CCP1CON, F, A
         movlw   0x81
@@ -401,7 +402,7 @@ task3:
         movlw   0
         subwfb  timeout+1, W, B
         movwf   runout+1, B     ; runout = timeout - 1 + 250ticks
-        bsf     LATA, 5, A      ; keyboard LED on
+        bsf     LATA, KBLED, A  ; keyboard LED on
         movf    rmask, W, B
         iorwf   LATC, F, A      ; relays ON
         bsf     flags, REFRESH, B

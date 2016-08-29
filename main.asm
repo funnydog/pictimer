@@ -23,11 +23,13 @@ SLOTDLY equ     2               ; duration of slot display view
 TOTBZCN equ     4               ; number of buzz cycles (on + off)
 BEEPSEC equ     1               ; duration of a beep in seconds
 
-        ;; flags
+        ;; timer events flags
 LIGHTON equ     0               ; light on event
 BUZZSIG equ     1               ; buzz signal event
-BUZZCHG equ     2               ; the buzz signal need to change
-SHOWSLT equ     3               ; show preset event
+SHOWSLT equ     2               ; show preset event
+
+        ;; other flags
+BUZZCHG equ     3               ; the acoustic/visual signal needs to change
 REFRESH equ     4               ; the display needs refresh
 LEADING equ     5               ; don't print the leading zero
 REPEAT  equ     6               ; key repeat fired

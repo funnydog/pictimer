@@ -487,7 +487,7 @@ task3_slot_end:
         return
 
         ;; initialize the display
-        ;; duty cycle = 1/16
+        ;; duty cycle = 2/16
         ;; blink = off
 seg_init:
         ltab    seg_init_cmd

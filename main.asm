@@ -18,37 +18,58 @@ B       equ     BANKED
 TIMEOUT equ     10              ; default timeout
 TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
 TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
+MAXSLOT equ     10              ; max number of presets
+SLOTDLY equ     2               ; duration of slot display view
+MAXBZCN equ     4               ; number of buzz cycles (on + off)
+BEEPSEC equ     1               ; duration of a beep in seconds
 
         ;; flags
-LIGHTON equ     0               ; light on
-LGHTOFF equ     1               ; light off
-REFRESH equ     2               ; the display needs refresh
-LEADING equ     3               ; don't print the leading zero
-REPEAT  equ     4               ; key repeat fired
+LIGHTON equ     0               ; light on event
+BUZZSIG equ     1               ; buzz signal event
+BUZZCHG equ     2               ; the buzz signal need to change
+SHOWSLT equ     3               ; show preset event
+REFRESH equ     4               ; the display needs refresh
+LEADING equ     5               ; don't print the leading zero
+REPEAT  equ     6               ; key repeat fired
 
         ;; buttons
-BSTART  equ     0               ; start
-BPLUS   equ     1               ; increase timeout
-BMINUS  equ     2               ; decrease timeout
-BTOGGLE equ     3               ; toggle full/half rows
+BSTART  equ     0               ; start the countdown
+BPLUS   equ     1               ; increase the timeout
+BMINUS  equ     2               ; decrease the timeout
+BTOGGLE equ     3               ; toggle full/1st half/2nd half rows
+BSLOT   equ     4               ; increase the slot number
 
 .data   udata
 
-timeout res     2               ; timeout in seconds
-rmask   res     1               ; bitmask with relays on
+        ;; variables
+runout  res     2               ; timeout in seconds running value
+timeout res     2               ; timeout in seconds stored value
+rmask   res     1               ; relay bitmask
 bstate  res     10              ; 10 debounces of 4ms each
+bindex  res     1               ; current index into bstate[]
 button  res     2               ; button status [0 = current, 1 = old ]
 dbuf    res     9               ; display buffer
-tmp     res     2               ; temporary value
-flags   res     1               ; signaling flags
-bindex  res     1               ; current index
-tsec    res     1               ; counter of tick seconds
+tmp     res     2               ; temporary values
+flags   res     1               ; flags
+tsec    res     1               ; tick counter, 250 ticks == 1s
 tdel    res     1               ; repeat delay counter
+slot    res     1               ; current slot number
+buzcnt  res     1               ; buzz cycles left
 
 .edata  code    0xF00000
 
         ;; variables stored in EEPROM: timeoutL, timeoutH, rmask
+        ;; 10 slots of presets initialized to default values
 saved   de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
+        de      LOW(TIMEOUT), HIGH(TIMEOUT), 3
 
         ;; entry code section
 .reset  code    0x0000
@@ -85,42 +106,70 @@ isr:
 
         ;; decrease or replenish tdel
         decf    tdel, F, B
-        bnz     isr0_l0
+        bnz     isr0_trepeat_end
         movlw   TREPEAT
         movwf   tdel, B
         bsf     flags, REPEAT, B
-isr0_l0:
+isr0_trepeat_end:
 
         ;; do not count seconds if not needed
-        btfss   flags, LIGHTON, B
-        bra     isr0_end
+        movlw   1<<LIGHTON | 1<<SHOWSLT | 1<<BUZZSIG
+        andwf   flags, W, B
+        bz      isr0_end
 
-        ;; handle the seconds
+        ;; 1 second == 250 ticks of 4ms each
         decfsz  tsec, F, B
         bra     isr0_end
         movlw   250
         movwf   tsec, B
 
-        ;; check if timeout is zero
-        movf    timeout+0, W, B
-        iorwf   timeout+1, W, B
-        bnz     isr0_l1
+        ;; common for every handler
+        bsf     flags, REFRESH, B
 
-        ;; timeout is zero
-        bcf     LATA, 5, A      ; keyboard led off
+        ;; check if timeout is zero
+        movf    runout+0, W, B
+        iorwf   runout+1, W, B
+        bnz     isr0_dec_timeout
+
+        ;; timeout handler for LIGHTON event
+        btfss   flags, LIGHTON, B
+        bra     isr0_light_end
+        bcf     flags, LIGHTON, B
         movlw   ~3
         andwf   LATC, F, A      ; relays off
-        bcf     flags, LIGHTON, B
-        bsf     flags, LGHTOFF, B
+        movlw   MAXBZCN*2       ; initialize the BUZZSIG event
+        movwf   buzcnt, B
+        movlw   BEEPSEC-1       ; BEEPSEC-1 + 250ticks
+        movwf   runout+0, B
+        bsf     flags, BUZZSIG, B
+        bsf     flags, BUZZCHG, B
         bra     isr0_end
+isr0_light_end:
 
-isr0_l1:
+        ;; timeout handler for BUZZSIG event
+        btfss   flags, BUZZSIG, B
+        bra     isr0_buzzsig_end
+        dcfsnz  buzcnt, F, B
+        bcf     flags, BUZZSIG, B
+        movlw   BEEPSEC-1       ; BEEPSEC-1 + 250ticks
+        movwf   runout+0, B
+        bsf     flags, BUZZCHG, B
+        bra     isr0_end
+isr0_buzzsig_end:
+
+        ;; timeout handler for SHOWSLT event
+        btfss   flags, SHOWSLT, B
+        bra     isr0_showslt_end
+        bcf     flags, SHOWSLT, B
+        bra     isr0_end
+isr0_showslt_end:
+
+isr0_dec_timeout:
         ;; timeout is not zero
         ;; decrease the timeout
-        bsf     flags, REFRESH, B
         movlw   0
-        decf    timeout+0, F, B
-        subwfb  timeout+1, F, B
+        decf    runout+0, F, B
+        subwfb  runout+1, F, B
 
 isr0_end:
 isr_end:
@@ -147,6 +196,7 @@ start:
         movlb   0x0              ; select the bank 0
 
         ;; load the settings in eeprom
+        clrf    slot, B
         call    read_eeprom
 
         ;; initialize bstate
@@ -157,12 +207,13 @@ main_l0:
         addlw   -1
         bnz     main_l0
 
-        ;; initialize dbuf
+        ;; initialize variables to default values
         call    seg_clear
         clrf    flags, B
         clrf    bindex, B
         movlw   250
         movwf   tsec, B
+        clrf    buzcnt, B
 
         ;; initialize the periodic TMR1
         ;; period = 16000 * 0.25 usec = 4msec
@@ -186,6 +237,10 @@ main_l0:
         movwf   T2CON, B        ; 1:16 prescaler
         movlw   103             ; 104 - 1
         movwf   PR2, B          ; (103 + 1) * 4 / 16Mhz *16 = 416 usec
+        movlw   (250 & 3) << 6  ; 250 is a 50% duty cycle
+        movwf   CCP1CON, A
+        movlw   250 >> 2
+        movwf   CCPR1L, A
 
         ;; enable the interrupts
         bcf     PIR2, CCP2IF, B
@@ -205,54 +260,83 @@ main_l0:
         bcf     flags, LIGHTON, B
         bsf     flags, REFRESH, B
 main_loop:
-        call    task1           ; check countdown
-        call    task2           ; refresh the display
-        call    task3           ; sample the inputs
+        call    task1           ; beep task
+        call    task2           ; display task
+        call    task3           ; input task
         bra     main_loop
 
-        ;; check if the countdown is complete
-        ;; and emit a signal when done
+        ;; signal the end of the countdown
+        ;; by blinking the display and a buzzer sound
 task1:
-        ;; and reset the timeout value
-        btfss   flags, LGHTOFF, B
+        ;; buzz only when BUZZCHG
+        btfss   flags, BUZZCHG, B
         return
-        bcf     flags, LGHTOFF, B
+        bcf     flags, BUZZCHG, B
 
-        ;; blink the display
-        movlw   0x83
-        call    seg_write
+        ;; check if this is the last BUZZCHG signal
+        movf    buzcnt, F, B
+        bnz     task1_alt_loop
 
-        ;; busy wait for 160 * (12.5 + 12.5) msec = 4 sec
-        movlw   40 * 4          ; 160 times
-        movwf   tmp, B
-
-        ;; set the duty cycle to 50% and claim RB2 to PWM
-        movlw   0x0C | (250 & 3)<<6
-        movwf   CCP1CON, A
-        movlw   250>>2
-        movwf   CCPR1L, A
-task1_l0:
-        delaycy (50000-4)       ; 12.5 msec
-        delaycy (50000-4)       ; 12.5 msec
-        decfsz  tmp, F, B
-        bra     task1_l0
-
-        ;; disable PWM on RB2
-        clrf    CCP1CON, A
-
-        ;; restore the display
+        ;; PWM OFF, display ON, KBLED OFF
+        bcf     LATA, 5, A
+        movlw   0xF0
+        andwf   CCP1CON, F, A
         movlw   0x81
-        call    seg_write
-        call    read_eeprom
-        bsf     flags, REFRESH, B
-        return
+        bra     seg_write
+
+        ;; inside the alternate loop
+task1_alt_loop:
+        btfss   buzcnt, 0, B
+        bra     task1_pwm_on
+
+        ;; PWM OFF, display OFF, KBLED OFF for odd buzcnt
+        bcf     LATA, 5, A
+        movlw   0xF0
+        andwf   CCP1CON, F, A
+        movlw   0x80
+        bra     seg_write
+
+        ;; PWM ON, display ON, KBLED ON for even buzcnt
+task1_pwm_on:
+        bsf     LATA, 5, A
+        movlw   0x0C
+        iorwf   CCP1CON, F, A
+        movlw   0x81
+        bra     seg_write
 
         ;; refresh the display with the new data
 task2:
+        ;; refresh only when REFRESH and !BUZZSIG
         btfss   flags, REFRESH, B
         return
+        btfsc   flags, BUZZSIG, B
+        return
 
+        ;; show the current slot ("Pr %1d", slot)
+task2_slot:
+        btfss   flags, SHOWSLT, B
+        bra     task2_time
+        movlw   0x73            ; 'P'
+        movwf   dbuf+0, B
+        movlw   0x50            ; 'r'
+        movwf   dbuf+2, B
+        clrf    dbuf+6, B       ; ' '
+        movf    slot, W, B
+        bcf     flags, LEADING, B
+        call    get_digit
+        movwf   dbuf+8, B       ; [slot]
+        bra     seg_send_buf
+
+        ;; show timeout / runout ("%4d", lighton ? runout : timeout)
+task2_time:
         ;; 16bit to BCD conversion
+        ;; if LIGHTON --> show runout
+        ;;    else    --> show timeout
+        lfsr    FSR0, timeout
+        btfss   flags, LIGHTON, B
+        bra     task2_bcd
+        lfsr    FSR0, runout
+task2_bcd:
         call    b16_d5
 
         ;; convert the buffer to a proper
@@ -261,27 +345,27 @@ task2:
         bsf     flags, LEADING, B
         movf    dbuf+0, W, B    ; most significant digit
         call    get_digit
-        btfsc   rmask, 0, B
-        iorlw   0x80            ; dot on when rmask bit 0 != 0
+        btfsc   rmask, 1, B
+        iorlw   0x80            ; dot on when (rmask & 2) != 0
         movwf   dbuf+0, B
 
         movf    dbuf+2, W, B
         call    get_digit
         btfsc   rmask, 1, B
-        iorlw   0x80            ; dot on when rmask bit 1 != 0
+        iorlw   0x80            ; dot on when (rmask & 2) != 0
         movwf   dbuf+2, B
 
         movf    dbuf+6, W, B
         call    get_digit
         btfsc   rmask, 0, B
-        iorlw   0x80            ; dot on when rmask bit 0 != 0
+        iorlw   0x80            ; dot on when (rmask & 1) != 0
         movwf   dbuf+6, B
 
         bcf     flags, LEADING, B
         movf    dbuf+8, W, B    ; least significant digit
         call    get_digit
-        btfsc   rmask, 1, B
-        iorlw   0x80            ; dot on when rmask bit 1 != 0
+        btfsc   rmask, 0, B
+        iorlw   0x80            ; dot on when (rmask & 1) != 0
         movwf   dbuf+8, B
 
         bcf     flags, REFRESH, B
@@ -289,8 +373,10 @@ task2:
 
         ;; handle the switches/keys
 task3:
-        ;; if LIGHTON do not read the user input
+        ;; read inputs if !LIGHTON and !BUZZSIG
         btfsc   flags, LIGHTON, B
+        return
+        btfsc   flags, BUZZSIG, B
         return
 
         ;; read the buttons, save the old read
@@ -300,60 +386,65 @@ task3:
 
         ;; check the button START
         btfss   button+0, BSTART, B
-        bra     task3_bplus
+        bra     task3_lighton_end
 
         ;; check if timeout is zero
         movf    timeout+0, W, B
         iorwf   timeout+1, W, B
-        bz      task3_bplus
+        bz      task3_lighton_end
 
         ;; start the countdown
         call    update_eeprom
-        bsf     LATA, 5, A
+        movlw   250
+        movwf   tsec, B         ; ensure tsec = 250
+        decf    timeout+0, W, B
+        movwf   runout+0, B
+        movlw   0
+        subwfb  timeout+1, W, B
+        movwf   runout+1, B     ; runout = timeout - 1 + 250ticks
+        bsf     LATA, 5, A      ; keyboard LED on
         movf    rmask, W, B
-        iorwf   LATC, F, A      ; lit
-        movlw   1
-        movwf   tsec, B
-        movlw   1<<LIGHTON | 1<<REFRESH
-        iorwf   flags, F, B
+        iorwf   LATC, F, A      ; relays ON
+        bsf     flags, REFRESH, B
+        bsf     flags, LIGHTON, B
         return
+task3_lighton_end:
 
-task3_bplus:
         ;; check the button PLUS
         movlw   1 << BPLUS
         call    get_repeat
-        bnc     task3_bminus
+        bnc     task3_plus_end
 
         ;; increase the seconds
         incf    timeout+0, F, B
         btfsc   STATUS, C, A
         incf    timeout+1, F, B
         bsf     flags, REFRESH, B
+task3_plus_end:
 
-task3_bminus:
         ;; check the button MINUS
         movlw   1 << BMINUS
         call    get_repeat
-        bnc     task3_btoggle
+        bnc     task3_minus_end
 
         ;; decrease the seconds
         movlw   0
         decf    timeout+0, F, B
         btfss   STATUS, C, A
         decf    timeout+1, F, B
-        bc      task3_bminus_l0
+        bc      task3_minus_l0
 
         ;; but not below 0
         clrf    timeout+0, B
         clrf    timeout+1, B
-task3_bminus_l0:
+task3_minus_l0:
         bsf     flags, REFRESH, B
+task3_minus_end:
 
-task3_btoggle:
         ;; check the button TOGGLE
         movlw   1 << BTOGGLE
         call    get_repeat
-        bnc     task3_end
+        bnc     task3_toggle_end
 
         ;; increase rmask and rollover to 1
         ;; if greater than 3
@@ -362,10 +453,37 @@ task3_btoggle:
         movf    rmask, W, B
         addlw   255 - 3
         addlw   (3 - 1) + 1
-        bc      task3_end
+        bc      task3_toggle_end
         movlw   1
         movwf   rmask, B
-task3_end:
+task3_toggle_end:
+
+        ;; check the button SLOT
+        movlw   1 << BSLOT
+        call    get_repeat
+        bnc     task3_slot_end
+
+        ;; increase slot and ensure its between 0 anx MAXSLOT-1
+        incf    slot, F, B
+        movf    slot, W, B
+        addlw   255 - (MAXSLOT-1)
+        addlw   (MAXSLOT-1 - 0) + 1
+        skpc
+        clrf    slot, B
+
+        ;; update the timeout and rmask values from EEPROM
+        ;; and show the slot number in the display for SLOTDLY
+        ;; seconds
+        call    read_eeprom
+        clrf    runout+1, B
+        movlw   250
+        movwf   tsec, B
+        movlw   SLOTDLY-1
+        movwf   runout+0, B     ; SLOTDLY-1 + 250ticks
+        bsf     flags, REFRESH, B
+        bsf     flags, SHOWSLT, B
+task3_slot_end:
+
         return
 
         ;; initialize the display
@@ -438,10 +556,10 @@ get_digit_l0:
         bcf     flags, LEADING, B
         return
 get_digit_l1:
-        db      0x3F,0x06,0x5B,0x4F
-        db      0x66,0x6D,0x7D,0x07
-        db      0x7F,0x6F,0x77,0x7C
-        db      0x39,0x5E,0x79,0x71
+        db      0x3F,0x06,0x5B,0x4F ; 0, 1, 2, 3
+        db      0x66,0x6D,0x7D,0x07 ; 4, 5, 6, 7
+        db      0x7F,0x6F,0x77,0x7C ; 8, 9, 0, A
+        db      0x39,0x5E,0x79,0x71 ; B, C, D, F
 
         ;; get the debounced status of the switches
         ;; the status is debounced in the timer ISR
@@ -480,8 +598,10 @@ get_repeat_skip:
         ;; read timeout and rmask from EEPROM
 read_eeprom:
         lfsr    FSR0, timeout
-        movlw   saved+0
-        movwf   EEADR, A
+        rlncf   slot, W, B
+        addwf   slot, W, B
+        addlw   saved
+        movwf   EEADR, A        ; addr = saved + slot * 3
         bcf     EECON1, EEPGD, A
         bcf     EECON1, CFGS, A
         movlw   3
@@ -497,11 +617,13 @@ read_eeprom_l0:
 
         ;; update timeout and rmask in EEPROM
 update_eeprom:
+        lfsr    FSR0, timeout
+        rlncf   slot, W, B
+        addwf   slot, W, B
+        addlw   saved
+        movwf   EEADR, A        ; addr = saved + slot * 3
         movlw   3
         movwf   tmp, B
-        lfsr    FSR0, timeout
-        movlw   saved+0
-        movwf   EEADR, A
         bcf     EECON1, CFGS, A
         bcf     EECON1, EEPGD, A
         bsf     EECON1, WREN, A
@@ -532,9 +654,10 @@ update_eeprom_l2:
 
         ;; convert the 16bit timeout value to BCD
         ;; saving the digits in dbuf[0,2,6,8]
-b16_d5
-        swapf   timeout+0, W, B ; partial ones sum in low byte
-        addwf   timeout+0, W, B
+        ;; @FSR0: address of the 16bit value (LSB, MSB)
+b16_d5:
+        swapf   INDF0, W, A     ; partial ones sum in low byte
+        addwf   INDF0, W, A
         andlw   0x0f
         skpndc
         addlw   0x16
@@ -544,7 +667,7 @@ b16_d5
         skpdc
         addlw   -0x06           ; wmax=3:0
 
-        btfsc   timeout+0, 4, B ; complete ones sum in low byte
+        btfsc   POSTINC0, 4, A  ; complete ones sum in low byte
         addlw   0x15+0x06
         skpdc
         addlw   -0x06           ; wmax=4:5
@@ -556,8 +679,8 @@ b16_d5
 ;   ----------------------------------------------------
 ;   128      64     32     16      8      4     2     1
 ;
-        swapf   timeout+1, W, B ; partial ones sum in high byte
-        addwf   timeout+1, W, B
+        swapf   INDF0, W, A     ; partial ones sum in high byte
+        addwf   INDF0, W, A
         andlw   0x0f
         skpndc
         addlw   0x16
@@ -567,12 +690,12 @@ b16_d5
         skpdc
         addlw   -0x06           ; wmax=3:0
 
-        btfsc   timeout+1, 0, B ; complete ones sum in high byte
+        btfsc   INDF0, 0, A     ; complete ones sum in high byte
         addlw   0x05+0x06
         skpdc
         addlw   -0x06           ; wmax=3:5
 
-        btfsc   timeout+1, 4, B
+        btfsc   INDF0, 4, A
         addlw   0x15+0x06
         skpdc
         addlw   -0x06           ; wmax=5:0
@@ -598,7 +721,7 @@ b16_d5
 ; 32768   16384   8192   4096   2048   1024   512   256
 ;
                                 ; complete tens sum in low and high byte
-        rrcf    timeout+1, W, B ; rotate right high byte once
+        rrcf    POSTDEC0, W, A  ; rotate right high byte once
         andlw   0x0f            ; clear high nibble
         addlw   0x06            ; adjust bcd
         skpdc
@@ -609,37 +732,37 @@ b16_d5
         skpdc
         addlw   -0x06           ; wmax=2:4
 
-        btfsc   timeout+0, 5, B
+        btfsc   INDF0, 5, A
         addlw   0x03+0x06
         skpdc
         addlw   -0x06           ; wmax=2:7
 
-        btfsc   timeout+0, 6, B
+        btfsc   INDF0, 6, A
         addlw   0x06+0x06
         skpdc
         addlw   -0x06           ; wmax=3:3
 
-        btfsc   timeout+0, 7, B
+        btfsc   POSTINC0, 7, A
         addlw   0x12+0x06
         skpdc
         addlw   -0x06           ; wmax=4:5
 
-        btfsc   timeout+1, 0, B
+        btfsc   INDF0, 0, A
         addlw   0x25+0x06
         skpdc
         addlw   -0x06           ; wmax=7:0
 
-        btfsc   timeout+1, 5, B
+        btfsc   INDF0, 5, A
         addlw   0x09+0x06
         skpdc
         addlw   -0x06           ; wmax=7:9
 
-        btfsc   timeout+1, 6, B
+        btfsc   INDF0, 6, A
         addlw   0x08+0x06
         skpdc
         addlw   -0x06           ; wmax=8:7
 
-        btfsc   timeout+1, 7, B
+        btfsc   INDF0, 7, A
         addlw   0x06+0x06
         skpdc
         addlw   -0x06           ; wmax=9:3, tens sum ended
@@ -663,22 +786,22 @@ b16_d5
 ; 32768   16384   8192   4096   2048   1024   512   256
 ;
                                 ; complete hundreds sum in high byte
-        btfsc   timeout+1, 1, B
+        btfsc   INDF0, 1, A
         addlw   0x05+0x06
         skpdc
         addlw   -0x06           ; wmax=1:4
 
-        btfsc   timeout+1, 5, B
+        btfsc   INDF0, 5, A
         addlw   0x01+0x06
         skpdc
         addlw   -0x06           ; wmax=1:5
 
-        btfsc   timeout+1, 6, B
+        btfsc   INDF0, 6, A
         addlw   0x03+0x06
         skpdc
         addlw   -0x06           ; wmax=1:8
 
-        btfsc   timeout+1, 7, B
+        btfsc   INDF0, 7, A
         addlw   0x07+0x06
         skpdc
         addlw   -0x06           ; wmax=2:5, hundreds sum ended
@@ -701,7 +824,7 @@ b16_d5
 ; 32768   16384   8192   4096   2048   1024   512   256
 ;
                                 ; complete thousands sum in low and high byte
-        rrcf    timeout+1, W, B ; rotate right high byte twice
+        rrcf    INDF0, W, A     ; rotate right high byte twice
         movwf   tmp, B
         rrcf    tmp, W, B
         andlw   0x0f            ; clear high nibble
@@ -714,12 +837,12 @@ b16_d5
         skpdc
         addlw   -0x06           ; wmax=1:7
 
-        btfsc   timeout+1, 6, B
+        btfsc   INDF0, 6, A
         addlw   0x16+0x06
         skpdc
         addlw   -0x06           ; wmax=3:3
 
-        btfsc   timeout+1, 7, B
+        btfsc   INDF0, 7, A
         addlw   0x32+0x06
         skpdc
         addlw   -0x06           ; wmax=6:5, thousands sum ended

@@ -20,7 +20,7 @@ TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
 TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
 MAXSLOT equ     10              ; max number of presets
 SLOTDLY equ     2               ; duration of slot display view
-MAXBZCN equ     4               ; number of buzz cycles (on + off)
+TOTBZCN equ     4               ; number of buzz cycles (on + off)
 BEEPSEC equ     1               ; duration of a beep in seconds
 
         ;; flags
@@ -137,7 +137,7 @@ isr0_trepeat_end:
         bcf     flags, LIGHTON, B
         movlw   ~3
         andwf   LATC, F, A      ; relays off
-        movlw   MAXBZCN*2       ; initialize the BUZZSIG event
+        movlw   TOTBZCN*2       ; initialize the BUZZSIG event
         movwf   buzcnt, B
         movlw   BEEPSEC-1       ; BEEPSEC-1 + 250ticks
         movwf   runout+0, B

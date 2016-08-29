@@ -277,10 +277,7 @@ task1:
         movf    buzcnt, F, B
         bnz     task1_alt_loop
 
-        ;; PWM OFF, display ON, KBLED OFF
-        bcf     LATA, 5, A
-        movlw   0xF0
-        andwf   CCP1CON, F, A
+        ;; PWM already OFF, display ON, KBLED already OFF
         movlw   0x81
         bra     seg_write
 

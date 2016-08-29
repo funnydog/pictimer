@@ -234,16 +234,20 @@ main_l0:
 
         ;; PWM for the acoustic signal
         ;; set TMR2 for a 1:16 prescaler and 103 ticks period
-        ;; (i.e. 416 usec) that matches the resonant frequency
+        ;; (i.e. 416us) that matches the resonant frequency
         ;; of the buzzer (2400 Hz)
+        bsf     TRISB, 2, B
+        movlw   103             ; 104 - 1
+        movwf   PR2, B          ; (103+1) * 4 / 16Mhz * 16 = 416us
         movlw   0x06
         movwf   T2CON, B        ; 1:16 prescaler
-        movlw   103             ; 104 - 1
-        movwf   PR2, B          ; (103 + 1) * 4 / 16Mhz *16 = 416 usec
-        movlw   (250 & 3) << 6  ; 250 is a 50% duty cycle
-        movwf   CCP1CON, A
-        movlw   250 >> 2
-        movwf   CCPR1L, A
+        movlw   (208 & 3) << 4
+        movwf   CCP1CON, B
+        movlw   208 >> 2        ; (103+1) * 4 * 0.5 = 208
+        movwf   CCPR1L, B
+        movlw   1<<STR1SYNC|1<<STR1B
+        movwf   PSTR1CON, B
+        bcf     TRISB, 2, B
 
         ;; enable the interrupts
         bcf     PIR2, CCP2IF, B

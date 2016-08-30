@@ -498,20 +498,14 @@ task3_slot_end:
         ;;
         ;; Return: no value
 seg_init:
-        ltab    seg_init_cmd
-        movlw   4
-        movwf   tmp, B
-seg_init_l0:
-        movlw   2
-        call    i2c_send_tbl
-        decfsz  tmp, F, B
-        bra     seg_init_l0
-        return
-seg_init_cmd:
-        db      0xE0, 0x21      ; turn on system oscillator
-        db      0xE0, 0xA3      ; set int/row output pins as high
-        db      0xE0, 0xE1      ; set dimming duty cycle to 2/16
-        db      0xE0, 0x81      ; turn on the display blink = OFF
+        movlw   0x21            ; turn on system oscillator
+        call    seg_write
+        movlw   0xA3            ; set int/row output pins as high
+        call    seg_write
+        movlw   0xE1            ; set dimming duty cycle to 2/16
+        call    seg_write
+        movlw   0x81            ; turn on the display blink = OFF
+        ;; proceed to seg_write
 
         ;; seg_write - write one byte to the display
         ;; @W: byte to write

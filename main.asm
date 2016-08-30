@@ -274,8 +274,13 @@ main_loop:
         call    task3           ; input task
         bra     main_loop
 
-        ;; signal the end of the countdown
-        ;; by blinking the display and a buzzer sound
+        ;; task1 - signal the end of the countdown
+        ;;
+        ;; Signal the end of the countdown to the user
+        ;; by means of:
+        ;;   * 7seg display blinking
+        ;;   * KBLED blinking
+        ;;   * buzzer driven by PWM signal
 task1:
         ;; buzz only when BUZZCHG
         btfss   flags, BUZZCHG, B
@@ -310,7 +315,14 @@ task1_pwm_on:
         movlw   0x81
         bra     seg_write
 
-        ;; refresh the display with the new data
+        ;; task2 - 7seg display management
+        ;;
+        ;; Show the data on the 7seg display only when
+        ;; the REFRESH flag is set:
+        ;;   * BUZZSIG doesn't show anything
+        ;;   * SHOWSLT shows the current preset slot
+        ;;   * LIGHTON shows the runout value
+        ;;   * or else show the timeout value
 task2:
         ;; refresh only when REFRESH and !BUZZSIG
         btfss   flags, REFRESH, B
@@ -377,7 +389,16 @@ task2_bcd:
         bcf     flags, REFRESH, B
         bra     seg_send_buf
 
-        ;; handle the switches/keys
+        ;; task3 - handle the keys
+        ;;
+        ;; Check the pushed keys:
+        ;;   * BSTART  starts the countdown
+        ;;   * BPLUS   increments the timeout
+        ;;   * BMINUS  decreases the timeout
+        ;;   * BTOGGLE toggles between the lamp modes
+        ;;   * BSLOT   cycles through the presets
+        ;;
+        ;; The keys are debounced and checked for repetition.
 task3:
         ;; read inputs if !LIGHTON and !BUZZSIG
         btfsc   flags, LIGHTON, B

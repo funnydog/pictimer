@@ -518,6 +518,8 @@ seg_write:
         call    i2c_start
         movlw   0xE0
         call    i2c_write
+        btfsc   STATUS, C, A
+        bra     i2c_stop
         movf    tmp, W, B
         call    i2c_write
         bra     i2c_stop
@@ -533,16 +535,22 @@ seg_write:
         ;; Return: no value
 seg_send_buf:
         call    i2c_start
-        movlw   0xE0
+        movlw   0xE0            ; 7seg display address
         call    i2c_write
-        movlw   0
+        btfsc   STATUS, C, A
+        bra     i2c_stop        ; NACK
+        movlw   0               ; address 0x00
         call    i2c_write
+        btfsc   STATUS, C, A
+        bra     i2c_stop        ; NACK
         movlw   9
         movwf   tmp, B
         lfsr    FSR0, dbuf
 seg_send_l0:
         movf    POSTINC0, W, A
         call    i2c_write
+        btfsc   STATUS, C, A
+        bra     i2c_stop        ; NACK
         decf    tmp, F, B
         bnz     seg_send_l0
         bra     i2c_stop

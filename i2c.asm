@@ -1,7 +1,7 @@
         include "config.inc"
 
         global  i2c_init, i2c_start, i2c_restart, i2c_stop, i2c_write
-        global  i2c_read_ack, i2c_read_nack, i2c_send_tbl
+        global  i2c_read_ack, i2c_read_nack
 
 #define SPEED(x) (FOSC/1000/x)/4-1
 
@@ -85,29 +85,6 @@ i2c_write:
         btfsc   SSP1CON2, ACKSTAT, A
         bsf     STATUS, C, A
         return
-
-        ;; i2c_send_tbl() - send data from table
-        ;; @TBLPTRU: upper address of data
-        ;; @TBLPTRH: higher address of data
-        ;; @TBLPTRL: lower add of data
-        ;; @W: number of bytes to send
-        ;;
-        ;; Send at most W bytes of data but stop early
-        ;; if we don't receive an ACK (last byte)
-        ;;
-        ;; Return: no value
-i2c_send_tbl:
-        call    i2c_start
-i2c_send_tbl_loop:
-        tblrd   *+
-        call    i2c_wait_idle
-        movff   TABLAT, SSP1BUF
-        call    i2c_wait_completed
-        btfsc   SSP1CON2, ACKSTAT, A
-        bra     i2c_stop
-        addlw   -1
-        bnz     i2c_send_tbl_loop
-        bra     i2c_stop
 
         ;; i2c_read_nack() - read a byte without ACK
         ;;

@@ -490,9 +490,13 @@ task3_slot_end:
 
         return
 
-        ;; initialize the display
-        ;; duty cycle = 2/16
-        ;; blink = off
+        ;; seg_init - initialize the 7seg display
+        ;;
+        ;; Initialize the 7seg display with the following settings:
+        ;;  * duty cycle = 2/16
+        ;;  * blink      = OFF
+        ;;
+        ;; Return: no value
 seg_init:
         ltab    seg_init_cmd
         movlw   4
@@ -503,9 +507,18 @@ seg_init_l0:
         decfsz  tmp, F, B
         bra     seg_init_l0
         return
-seg_init_cmd    db      0xE0,0x21,0xE0,0xA3,0xE0,0xE1,0xE0,0x81,0xE0,0x83
+seg_init_cmd:
+        db      0xE0, 0x21      ; turn on system oscillator
+        db      0xE0, 0xA3      ; set int/row output pins as high
+        db      0xE0, 0xE1      ; set dimming duty cycle to 2/16
+        db      0xE0, 0x81      ; turn on the display blink = OFF
 
-        ;; write one byte to the display
+        ;; seg_write - write one byte to the display
+        ;; @W: byte to write
+        ;;
+        ;; Write one byte to the display address (0xE0)
+        ;;
+        ;; Return: no value
 seg_write:
         movwf   tmp, B
         call    i2c_start
@@ -515,11 +528,15 @@ seg_write:
         call    i2c_write
         bra     i2c_stop
 
-        ;; display the contents of dbuf
+        ;; seg_send_buf: copy dbuf[] into the 7seg display
         ;;
-        ;; Positions of the digits:
-        ;; 0123456789
-        ;; d d : d d
+        ;; Copy the dbuf[9] array into the 7seg display
+        ;; memory. The position of the digits are as follows:
+        ;;  0 1 2 3 4 5 6 7 8 9
+        ;;  -+-+-+-+-+-+-+-+-+-
+        ;;  d   d   :   d   d
+        ;;
+        ;; Return: no value
 seg_send_buf:
         call    i2c_start
         movlw   0xE0
@@ -536,7 +553,11 @@ seg_send_l0:
         bnz     seg_send_l0
         bra     i2c_stop
 
-        ;; clear the contents of dbuf
+        ;; seg_clear - clear the contents of dbuf[]
+        ;;
+        ;; Clear the contents of the dbuf[] array.
+        ;;
+        ;; Return: no value
 seg_clear:
         movlw   9
         lfsr    FSR0, dbuf
@@ -546,8 +567,15 @@ seg_clear_l0:
         bnz     seg_clear_l0
         return
 
-        ;; get the digit led mask for a given digit
-        ;; taking into account the LEADING zero
+        ;; get_digit - get the bitmask for a given digit
+        ;; @W: digit
+        ;;
+        ;; Get the 7seg display bitmask for the digit in W.
+        ;; If the LEADING flag is set return an empty bitmask.
+        ;; The lower point in the 7seg display is the 7th bit
+        ;; with a bitmask of 0x80.
+        ;;
+        ;; Return: W = 7seg bitmask
 get_digit:
         andlw   0x0F
         bnz     get_digit_l0
@@ -565,8 +593,13 @@ get_digit_l1:
         db      0x7F,0x6F,0x77,0x7C ; 8, 9, 0, A
         db      0x39,0x5E,0x79,0x71 ; B, C, D, F
 
-        ;; get the debounced status of the switches
-        ;; the status is debounced in the timer ISR
+        ;; get_switches - sample the keys' status
+        ;;
+        ;; Take the values in dbuf and combine them
+        ;; into one value by ANDing each one. The
+        ;; result is saved into the button variable
+        ;;
+        ;; Return: no value
 get_switches:
         movlw   10
         movwf   tmp, B
@@ -579,8 +612,13 @@ get_switches_l0:
         movwf   button, B
         return
 
-        ;; set the carry flag if the button has to be signaled
-        ;; W = 1 << button
+        ;; get_repeat - detect if a key was pushed
+        ;; @W: 1<<button
+        ;;
+        ;; Detect if a key was pushed or if enough time
+        ;; passed to fire it again.
+        ;;
+        ;; Return: Carry Flag set if key was pushed
 get_repeat:
         bcf     STATUS, C, A
         andwf   button+0, W, B
@@ -599,7 +637,12 @@ get_repeat_signal:
 get_repeat_skip:
         return
 
-        ;; read timeout and rmask from EEPROM
+        ;; read_eeprom - read the current slot values from eeprom
+        ;;
+        ;; Read the timeout and rmask values from the current
+        ;; slot in EEPROM.
+        ;;
+        ;; Return: no value
 read_eeprom:
         lfsr    FSR0, timeout
         rlncf   slot, W, B
@@ -619,7 +662,12 @@ read_eeprom_l0:
         bra     read_eeprom_l0
         return
 
-        ;; update timeout and rmask in EEPROM
+        ;; update_eeprom - save the slot data in eeprom
+        ;;
+        ;; Update the current slot with the values stored
+        ;; in timeout and rmask, but only if they differ.
+        ;;
+        ;; Return: no value
 update_eeprom:
         lfsr    FSR0, timeout
         rlncf   slot, W, B
@@ -656,9 +704,14 @@ update_eeprom_l2:
         bsf     INTCON, GIE, A
         return
 
-        ;; convert the 16bit timeout value to BCD
-        ;; saving the digits in dbuf[0,2,6,8]
-        ;; @FSR0: address of the 16bit value (LSB, MSB)
+        ;; b16_d5 - convert a 16bit value to BCD
+        ;; @FSR0: address of the 16bit value [LSB, MSB]
+        ;;
+        ;; Convert a 16bit value pointed by FSR0 into
+        ;; 5 digits BCD values saved in
+        ;;  tmp, dbuf[0], dbuf[2], dbuf[6], dbuf[8]
+        ;;
+        ;; Return: no value
 b16_d5:
         swapf   INDF0, W, A     ; partial ones sum in low byte
         addwf   INDF0, W, A

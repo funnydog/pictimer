@@ -73,14 +73,29 @@ i2c_stop:
         bsf     SSP1CON2, ACKEN, A
         bra     i2c_wait_completed
 
+        ;; i2c_write() - writes a byte into the bus
+        ;; @W: byte to write
+        ;;
+        ;; Return: carry flag set if !ACK
 i2c_write:
         call    i2c_wait_idle
         movwf   SSP1BUF, A
         call    i2c_wait_completed
-        btfss   SSP1CON2, ACKSTAT, A
-        retlw   0               ; ack received
-        retlw   1               ; ack NOT received
+        bcf     STATUS, C, A
+        btfsc   SSP1CON2, ACKSTAT, A
+        bsf     STATUS, C, A
+        return
 
+        ;; i2c_send_tbl() - send data from table
+        ;; @TBLPTRU: upper address of data
+        ;; @TBLPTRH: higher address of data
+        ;; @TBLPTRL: lower add of data
+        ;; @W: number of bytes to send
+        ;;
+        ;; Send at most W bytes of data but stop early
+        ;; if we don't receive an ACK (last byte)
+        ;;
+        ;; Return: no value
 i2c_send_tbl:
         call    i2c_start
 i2c_send_tbl_loop:
@@ -88,10 +103,18 @@ i2c_send_tbl_loop:
         call    i2c_wait_idle
         movff   TABLAT, SSP1BUF
         call    i2c_wait_completed
+        btfsc   SSP1CON2, ACKSTAT, A
+        bra     i2c_stop
         addlw   -1
         bnz     i2c_send_tbl_loop
         bra     i2c_stop
 
+        ;; i2c_read_nack() - read a byte without ACK
+        ;;
+        ;; Read a byte without sending the ACK to inform
+        ;; the sender it was the last byte needed.
+        ;;
+        ;; Return: value read in W
 i2c_read_nack:
         call    i2c_wait_idle
         bsf     SSP1CON2, RCEN, A
@@ -101,6 +124,12 @@ i2c_read_nack:
         bsf     SSP1CON2, ACKEN, A
         bra     i2c_wait_completed
 
+        ;; i2c_read_ack() - read a byte with ACK
+        ;;
+        ;; Read a byte and send the ACK to inform
+        ;; the sender we need more data.
+        ;;
+        ;; Return: value read in W
 i2c_read_ack:
         call    i2c_wait_idle
         bsf     SSP1CON2, RCEN, A

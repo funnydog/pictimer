@@ -126,13 +126,13 @@ isr0_trepeat_end:
         movlw   250
         movwf   tsec, B
 
-        ;; common for every handler
-        bsf     flags, REFRESH, B
-
         ;; check if timeout is zero
         movf    runout+0, W, B
         iorwf   runout+1, W, B
         bnz     isr0_dec_timeout
+
+        ;; common for every handler
+        bsf     flags, REFRESH, B
 
         ;; timeout handler for LIGHTON event
         btfss   flags, LIGHTON, B
@@ -173,6 +173,8 @@ isr0_dec_timeout:
         movlw   0
         decf    runout+0, F, B
         subwfb  runout+1, F, B
+        btfsc   flags, LIGHTON, B
+        bsf     flags, REFRESH, B
 
 isr0_end:
 isr_end:

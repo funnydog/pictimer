@@ -15,7 +15,7 @@
 
         ;; constants
 B       equ     BANKED
-TIMEOUT equ     10              ; default timeout
+TIMEOUT equ     60              ; default timeout
 TDELAY  equ     250             ; initial key repeat delay in ticks (1sec)
 TREPEAT equ     25              ; next key repeat delay in ticks (0.1sec)
 MAXSLOT equ     10              ; max number of presets

@@ -15,10 +15,13 @@ delay.o: config.inc
 i2c.o: config.inc
 main.o: config.inc delay.inc i2c.inc macro.inc
 
-.PHONY = clean flash sim
+.PHONY = clean erase flash sim
 
 clean:
 	rm -f *.o *.hex *.cod *.map *.lst *.cof *~
+
+erase:
+	pk2cmd -R -P -E
 
 flash: $(OUTPUT)
 	pk2cmd -R -P -M -Y -F $<

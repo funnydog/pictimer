@@ -743,205 +743,76 @@ update_eeprom_l2:
         ;; 5 digits BCD values saved in
         ;;  tmp, dbuf[0], dbuf[2], dbuf[6], dbuf[8]
         ;;
-        ;; Return: no value
+        ;; for the theory please have a look at
+        ;; http://www.piclist.com/techref/microchip/math/radix/b2bu-16b5d.htm
+        ;;
+        ;; Return: 0
 b16_d5:
-        swapf   INDF0, W, A     ; partial ones sum in low byte
-        addwf   INDF0, W, A
-        andlw   0x0f
-        skpndc
-        addlw   0x16
-        skpndc
-        addlw   0x06
-        addlw   0x06
-        skpdc
-        addlw   -0x06           ; wmax=3:0
+        movf    POSTINC0, W, A  ; we have to start from MSB
+        swapf   INDF0, W, A     ; W  = A2*16 + A3
+        iorlw   0xF0            ; W  = A3 - 16
+        movwf   dbuf+0, B       ; B3 = A3 - 16
+        addwf   dbuf+0, F, B    ; B3 = 2*(A3 - 16) = 2A3 - 32
+        addlw   226             ; W  = A3 - 16 - 30 = A3 - 46
+        movwf   dbuf+2, B       ; B2 = A3 - 46
+        addlw   50              ; W  = A3 - 40 + 50 = A3 + 4
+        movwf   dbuf+8, B       ; B0 = A3 + 4
 
-        btfsc   POSTINC0, 4, A  ; complete ones sum in low byte
-        addlw   0x15+0x06
-        skpdc
-        addlw   -0x06           ; wmax=4:5
-        movwf   dbuf+8, B       ; save sum in dbuf+8
-;
-;     8+      4+     2+     1+     8+     4+    2+    1+
-;    20
-;   100      60     30     15+
-;   ----------------------------------------------------
-;   128      64     32     16      8      4     2     1
-;
-        swapf   INDF0, W, A     ; partial ones sum in high byte
-        addwf   INDF0, W, A
-        andlw   0x0f
-        skpndc
-        addlw   0x16
-        skpndc
-        addlw   0x06
-        addlw   0x06
-        skpdc
-        addlw   -0x06           ; wmax=3:0
+        movf    POSTDEC0, W, A  ; W  = A3 * 16 + A2
+        andlw   0x0F            ; W  = A2
+        addwf   dbuf+2, F, B    ; B2 = A3 + A2 - 46
+        addwf   dbuf+2, F, B    ; B2 = A3 + 2A2 - 46
+        addwf   dbuf+8, F, B    ; B0 = A3 + A2 + 4
+        addlw   233             ; W  = A2 - 23
+        movwf   dbuf+6, B       ; B1 = A2 - 23
+        addwf   dbuf+6, F, B    ; B1 = 2*(A2 - 23) = 2A2 - 46
+        addwf   dbuf+6, F, B    ; B1 = 3*(A2 - 23) = 3A2 - 69
 
-        btfsc   INDF0, 0, A     ; complete ones sum in high byte
-        addlw   0x05+0x06
-        skpdc
-        addlw   -0x06           ; wmax=3:5
+        swapf   INDF0, W, A     ; W  = A0 * 16 + A1
+        andlw   0x0F            ; W  = A1
+        addwf   dbuf+6, F, B    ; B1 = 3A2 + A1 - 69
+        addwf   dbuf+8, F, B    ; B0 = A3 + A2 + A1 + 4 (C = 0)
 
-        btfsc   INDF0, 4, A
-        addlw   0x15+0x06
-        skpdc
-        addlw   -0x06           ; wmax=5:0
+        rlcf    dbuf+6, F, B    ; B1 = 2*(3A2 + A1 - 69) = 6A2 + 2A1 - 138 (C = 1)
+        rlcf    dbuf+8, F, B    ; B0 = 2*(A3+A2+A1+4)+C = 2A3+2A2+2A1+9
+        comf    dbuf+8, F, B    ; B0 = ~(2A3+2A2+2A1+9)= -2A3-2A2-2A1-10
+        rlcf    dbuf+8, F, B    ; B0 = 2*(-2A3-2A2-2A1-10) = -4A3-4A2-4A1-20
 
-        addlw   0x06            ; include previous sum
-        addwf   dbuf+8, W, B
-        skpdc
-        addlw   -0x06           ; wmax=9:5, ones sum ended
+        movf    INDF0, W, A     ; W  = A1*16+A0
+        andlw   0x0F            ; W  = A0
+        addwf   dbuf+8, F, B    ; B0 = A0-4A3-4A2-4A1-20 (C=0)
+        rlcf    dbuf+0, F, B    ; B3 = 2*(2A3-32) = 4A3 - 64
 
-        movwf   dbuf+8, B
-        movwf   dbuf+6, B
-        swapf   dbuf+6, F, B
-        movlw   0x0f
-        andwf   dbuf+8, F, B    ; save total ones sum in dbuf+8
-        andwf   dbuf+6, F, B    ; save partial tens sum in dbuf+6
-;
-;     8+      4+     2+     1+     8+     4+    2+    1+
-;                           5+
-;    60      80     90     10+                        5+
-;   700     300    100     80     40     20    10    50
-; 32000   16000   8000   4000   2000   1000   500   200
-; ------------------------------------------------------
-; 32768   16384   8192   4096   2048   1024   512   256
-;
-                                ; complete tens sum in low and high byte
-        rrcf    POSTDEC0, W, A  ; rotate right high byte once
-        andlw   0x0f            ; clear high nibble
-        addlw   0x06            ; adjust bcd
-        skpdc
-        addlw   -0x06           ; wmax=1:5
+        movlw   0x07            ; W  = 7
+        movwf   tmp, B          ; B4 = 7
 
-        addlw   0x06            ; include previous sum
-        addwf   dbuf+6, W, B
-        skpdc
-        addlw   -0x06           ; wmax=2:4
-
-        btfsc   INDF0, 5, A
-        addlw   0x03+0x06
-        skpdc
-        addlw   -0x06           ; wmax=2:7
-
-        btfsc   INDF0, 6, A
-        addlw   0x06+0x06
-        skpdc
-        addlw   -0x06           ; wmax=3:3
-
-        btfsc   POSTINC0, 7, A
-        addlw   0x12+0x06
-        skpdc
-        addlw   -0x06           ; wmax=4:5
-
-        btfsc   INDF0, 0, A
-        addlw   0x25+0x06
-        skpdc
-        addlw   -0x06           ; wmax=7:0
-
-        btfsc   INDF0, 5, A
-        addlw   0x09+0x06
-        skpdc
-        addlw   -0x06           ; wmax=7:9
-
-        btfsc   INDF0, 6, A
-        addlw   0x08+0x06
-        skpdc
-        addlw   -0x06           ; wmax=8:7
-
-        btfsc   INDF0, 7, A
-        addlw   0x06+0x06
-        skpdc
-        addlw   -0x06           ; wmax=9:3, tens sum ended
-
-        movwf   dbuf+6, B       ; save total tens sum in dbuf+6
-        swapf   dbuf+6, W, B
-        andlw   0x0f            ; load partial hundreds sum in w
-;
-;     8+      4+     2+     1+     8+     4+    2+    1+
-;    20+                    5+
-;   100+     60+    30+    10+
-;   ----------------------------------------------------
-;   128      64     32     16      8      4     2     1
-;
-;     8+      4+     2+     1+     8+     4+    2+    1+
-;                           5+
-;    60+     80+    90+    10+                        5+
-;   700     300    100     80+    40+    20+   10+   50+
-; 32000   16000   8000   4000   2000   1000   500   200+
-; ------------------------------------------------------
-; 32768   16384   8192   4096   2048   1024   512   256
-;
-                                ; complete hundreds sum in high byte
-        btfsc   INDF0, 1, A
-        addlw   0x05+0x06
-        skpdc
-        addlw   -0x06           ; wmax=1:4
-
-        btfsc   INDF0, 5, A
-        addlw   0x01+0x06
-        skpdc
-        addlw   -0x06           ; wmax=1:5
-
-        btfsc   INDF0, 6, A
-        addlw   0x03+0x06
-        skpdc
-        addlw   -0x06           ; wmax=1:8
-
-        btfsc   INDF0, 7, A
-        addlw   0x07+0x06
-        skpdc
-        addlw   -0x06           ; wmax=2:5, hundreds sum ended
-
-        movwf   dbuf+2, B       ; save total hundreds sum in dbuf+2
-        swapf   dbuf+2, W, B
-        movwf   dbuf+0, B       ; save partial thousands sum in dbuf+0
-        movlw   0x0f            ; clear high nibble
-        andwf   dbuf+6, F, B
-        andwf   dbuf+2, F, B
-        movlw   0x0f
-        andwf   dbuf+0, F, B
-;
-;     8+      4+     2+     1+     8+     4+    2+    1+
-;                           5+
-;    60+     80+    90+    10+                        5+
-;   700+    300+   100+    80+    40+    20+   10+   50+
-; 32000   16000   8000   4000   2000   1000   500+  200+
-; ------------------------------------------------------
-; 32768   16384   8192   4096   2048   1024   512   256
-;
-                                ; complete thousands sum in low and high byte
-        rrcf    INDF0, W, A     ; rotate right high byte twice
-        movwf   tmp, B
-        rrcf    tmp, W, B
-        andlw   0x0f            ; clear high nibble
-        addlw   0x06            ; adjust bcd
-        skpdc
-        addlw   -0x06           ; wmax=1:5
-
-        addlw   0x06            ; include previous sum
-        addwf   dbuf+0, W, B
-        skpdc
-        addlw   -0x06           ; wmax=1:7
-
-        btfsc   INDF0, 6, A
-        addlw   0x16+0x06
-        skpdc
-        addlw   -0x06           ; wmax=3:3
-
-        btfsc   INDF0, 7, A
-        addlw   0x32+0x06
-        skpdc
-        addlw   -0x06           ; wmax=6:5, thousands sum ended
-
-        movwf   dbuf+0, B       ; save total thousands sum in dbuf+0
-        movwf   tmp, B
-        swapf   tmp, F, B       ; save ten-thousands sum in tmp
-        movlw   0x0f            ; clear high nibble
-        andwf   dbuf+0, F, B
-        andwf   tmp, F, B
-        return
+        ;; normalization
+        ;; B0 = A0-4(A3+A2+A1)-20 range  -5 .. -200
+        ;; B1 = 6A2+2A1-138       range -18 .. -138
+        ;; B2 = A3+2A2-46         range  -1 ..  -46
+        ;; B3 = 4A3-64            range  -4 ..  -64
+        ;; B4 = 7                 7
+        movlw   10              ; W  = 10
+b16_d5_lb1:                     ; do {
+        decf    dbuf+6, F, B    ;   B1 -= 1
+        addwf   dbuf+8, F, B    ;   B0 += 10
+        skpc                    ; } while B0 < 0
+        bra     b16_d5_lb1
+b16_d5_lb2:                     ; do {
+        decf    dbuf+2, F, B    ;  B2 -= 1
+        addwf   dbuf+6, F, B    ;  B1 += 10
+        skpc                    ; } while B1 < 0
+        bra     b16_d5_lb2
+b16_d5_lb3:                     ; do {
+        decf    dbuf+0, F, B    ;  B3 -= 1
+        addwf   dbuf+2, F, B    ;  B2 += 10
+        skpc                    ; } while B2 < 0
+        bra     b16_d5_lb3
+b16_d5_lb4:                     ; do {
+        decf    tmp, F, B       ;  B4 -= 1
+        addwf   dbuf+0, F, B    ;  B3 += 10
+        skpc                    ; } while B3 < 0
+        bra     b16_d5_lb4
+        retlw   0
 
         end

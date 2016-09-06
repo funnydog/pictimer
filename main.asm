@@ -442,6 +442,13 @@ task3_lighton_end:
         call    get_repeat
         bnc     task3_plus_end
 
+        ;; check if the new value is < 9999
+        movlw   LOW(0xFFFF - 9999 + 1)
+        addwf   timeout+0, W, B
+        movlw   HIGH(0xFFFF - 9999 + 1)
+        addwfc  timeout+1, W, B
+        bc      task3_plus_end
+
         ;; increase the seconds
         incf    timeout+0, F, B
         btfsc   STATUS, C, A

@@ -94,7 +94,7 @@ isr:
         lfsr    FSR2, bstate
         movf    bindex, W, B
         addwf   FSR2L, F, A
-        btfsc   STATUS, C, A
+        skpnc
         incf    FSR2H, F, A
         movf    PORTA, W, A
         andlw   0x3F
@@ -104,7 +104,7 @@ isr:
         incf    bindex, F, B
         movlw   -10
         addwf   bindex, W, B
-        btfsc   STATUS, C, A
+        skpnc
         clrf    bindex, B
 
         ;; decrease or replenish tdel
@@ -451,7 +451,7 @@ task3_lighton_end:
 
         ;; increase the seconds
         incf    timeout+0, F, B
-        btfsc   STATUS, C, A
+        skpnc
         incf    timeout+1, F, B
         bsf     flags, REFRESH, B
 task3_plus_end:
@@ -464,7 +464,7 @@ task3_plus_end:
         ;; decrease the seconds
         movlw   0
         decf    timeout+0, F, B
-        btfss   STATUS, C, A
+        skpc
         decf    timeout+1, F, B
         bc      task3_minus_l0
 
@@ -548,7 +548,7 @@ seg_write:
         call    i2c_start
         movlw   0xE0
         call    i2c_write
-        btfsc   STATUS, C, A
+        skpnc
         bra     i2c_stop
         movf    tmp, W, B
         call    i2c_write
@@ -567,11 +567,11 @@ seg_send_buf:
         call    i2c_start
         movlw   0xE0            ; 7seg display address
         call    i2c_write
-        btfsc   STATUS, C, A
+        skpnc
         bra     i2c_stop        ; NACK
         movlw   0               ; address 0x00
         call    i2c_write
-        btfsc   STATUS, C, A
+        skpnc
         bra     i2c_stop        ; NACK
         movlw   9
         movwf   tmp, B
@@ -579,7 +579,7 @@ seg_send_buf:
 seg_send_l0:
         movf    POSTINC0, W, A
         call    i2c_write
-        btfsc   STATUS, C, A
+        skpnc
         bra     i2c_stop        ; NACK
         decf    tmp, F, B
         bnz     seg_send_l0

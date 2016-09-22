@@ -8,7 +8,7 @@ $(OUTPUT): $(OBJECTS)
 	gplink -m -c -s $(LINKSCRIPT) -o $@ $^
 
 %.o: %.asm
-	gpasm -w2 -c -S2 -o $@ $<
+	gpasm -w2 -c -o $@ $<
 
 # explicit dependencies
 delay.o: config.inc
